@@ -68,7 +68,7 @@ import {weighLines} from '../dist/commands/maestro/decide.js'
 import {conversationHint, parsePremises, parseDependsOn, premiseValue, conversationFields, clientItems, conversationLines, itemLines, premiseLines, staleDecisionLines, statusChangeLines} from '../dist/conversation.js'
 import {choicesLines, choicesHint} from '../dist/choices.js'
 import {mediaLines, mediaOf} from '../dist/media.js'
-import {parseModel, modelProblem, asFace} from '../dist/model.js'
+import {parseModel, modelProblem, asFace, maestroModel} from '../dist/model.js'
 import {chatPayload, replyText} from '../dist/chat.js'
 
 let failed = 0
@@ -1686,7 +1686,9 @@ eq('model problem: no maestro', modelProblem('@alice/gpt-5.4', 'both'), 'Name th
 eq('model problem: a plain model', modelProblem('gpt-5.4', 'both'), 'Add a face: @<face>:maestro-1/gpt-5.4')
 eq('model problem: a bare name may be a face', modelProblem('alice', 'both'), 'Add a face: @<face>:maestro-1/alice, or, if alice is a face, @alice:maestro-1/<model>')
 eq('model problem: chat needs a downstream', /@alice:maestro-1\/<model>/.test(modelProblem('@alice:maestro-1', 'both') ?? ''), true)
-eq('model problem: choices takes the upstream alone', /no decoder after it/.test(modelProblem('@alice:maestro-1/gpt-5.4', 'upstream') ?? ''), true)
+eq('model problem: choices takes the choices decoder', modelProblem('@alice:maestro-1/gpt-5.4', 'upstream'), 'maestro:choices takes the choices decoder after the maestro: @alice:maestro-1/choices')
+eq('model problem: the choices decoder is fine', modelProblem('@alice:maestro-1/choices', 'upstream'), undefined)
+eq('maestro model: choices sends /choices', [maestroModel('@alice', {decoder: 'choices', needsDecoder: true}).model, maestroModel('@alice', {flash: true, decoder: 'choices', needsDecoder: true}).model, maestroModel('@alice:maestro-1', {decoder: 'choices', needsDecoder: true}).model, maestroModel('(@a | @b):maestro-1/choices', {needsDecoder: true}).model], ['@alice:maestro-1/choices', '@alice:maestro-1-flash/choices', '@alice:maestro-1/choices', '(@a | @b):maestro-1/choices'])
 eq('model problem: a bare face on choices', modelProblem('alice', 'upstream'), 'Write the face as @alice:maestro-1')
 eq('model problem: fine', [modelProblem('@alice:maestro-1', 'upstream'), modelProblem('(@a|@b):maestro-1-flash/jev-latest', 'both')], [undefined, undefined])
 eq('face: @ added once', [asFace('alice'), asFace('@alice'), asFace('(@a | @b)')], ['@alice', '@alice', '(@a | @b)'])
@@ -1910,7 +1912,7 @@ async function conversationsOverHttp() {
       if (req.url === '/v1/states/fs_1/claims/clm_a' && req.method === 'DELETE') return send(200, {object: 'claim.deleted', id: 'clm_a', deleted: true})
       if (req.url === '/v1/states/fs_1/claims/clm_x' && req.method === 'DELETE') return send(404, {detail: "no claim 'clm_x' holds on this state"})
       if (req.url === '/v1/choices') {
-        if (body?.model === '@bare:maestro-1') return send(409, {detail: '@bare has nothing compiled, so version 23 has nothing to propose from. Compile a source for it. Nothing was charged.'})
+        if (body?.model === '@bare:maestro-1/choices') return send(409, {detail: '@bare has nothing compiled, so version 23 has nothing to propose from. Compile a source for it. Nothing was charged.'})
         if (!body?.instructions) return send(200, {object: 'choices.question', model: body?.model, question: 'Why?', alternatives: [], usage: {input_tokens: 5, output_tokens: 2}})
         return send(200, {object: 'choices', model: body?.model, choices: [{name: 'Go', description: 'Now.'}], usage: {input_tokens: 5, output_tokens: 2}})
       }
@@ -1990,17 +1992,19 @@ async function conversationsOverHttp() {
 
 
     await run(['maestro:choices', '--face', 'alice', '--state', 'A chain opened.', '-q', 'What now?', '--max-choices', '3'])
-    eq('maestro:choices: model, state, question and max sent', last('/v1/choices'), {model: '@alice:maestro-1', state: 'A chain opened.', instructions: 'What now?', max_choices: 3})
+    eq('maestro:choices: model, state, question and max sent', last('/v1/choices'), {model: '@alice:maestro-1/choices', state: 'A chain opened.', instructions: 'What now?', max_choices: 3})
     r = await run(['maestro:choices', '--face', '@alice', '--flash', '--state', 'x'])
-    eq('maestro:choices: --flash, no question', last('/v1/choices'), {model: '@alice:maestro-1-flash', state: 'x'})
+    eq('maestro:choices: --flash, no question', last('/v1/choices'), {model: '@alice:maestro-1-flash/choices', state: 'x'})
     eq('maestro:choices: the question it would ask is printed', /@alice would ask: Why\?/.test(r.out), true)
     await run(['maestro:choices', '--face', '@alice:maestro-1-flash', '--state', 'x'])
-    eq('maestro:choices: the full model string is accepted', last('/v1/choices').model, '@alice:maestro-1-flash')
+    eq('maestro:choices: the full model string gets the decoder', last('/v1/choices').model, '@alice:maestro-1-flash/choices')
+    await run(['maestro:choices', '--face', '@alice:maestro-1/choices', '--state', 'x'])
+    eq('maestro:choices: the full model string with its decoder is sent as it is', last('/v1/choices').model, '@alice:maestro-1/choices')
     seen.length = 0
     r = await run(['maestro:choices', '--face', 'alice'])
     eq('maestro:choices: no situation is refused before sending', [r.code, /Describe the situation/.test(r.out), seen.length], [2, true, 0])
     r = await run(['maestro:choices', '--face', '@alice:maestro-1/gpt-x', '--state', 'x'])
-    eq('maestro:choices: a decoder is refused before sending', [r.code, /no decoder/.test(r.out), seen.length], [2, true, 0])
+    eq('maestro:choices: a decoder is refused before sending', [r.code, /runs the choices decoder[\s\S]*@alice:maestro-1\/choices/.test(r.out), seen.length], [2, true, 0])
     r = await run(['maestro:choices', '--face', 'alice', '--state-id', 'fs_1'])
     eq('maestro:choices: stateless, --state-id is gone', [r.code !== 0, /Nonexistent flag/i.test(r.out), seen.length], [true, true, 0])
     r = await run(['maestro:choices', '--face', 'alice', '--state', 'x', '--model', 'maestro-1-flash'])

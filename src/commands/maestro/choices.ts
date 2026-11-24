@@ -2,7 +2,7 @@ import {Flags} from '@oclif/core'
 import {BaseCommand} from '../../base.js'
 import {HwAPIError} from '../../client.js'
 import {CHOICES_PATH, MAX_CHOICES, choicesHint, choicesLines, type ChoicesResponse} from '../../choices.js'
-import {maestroModel} from '../../model.js'
+import {CHOICES_DECODER, maestroModel, parseModel} from '../../model.js'
 import {heldDecisionError, readStateFlags} from '../../decisions.js'
 import {retryOnceOnWarmUp, sayWarmUp} from '../../utils.js'
 
@@ -20,7 +20,7 @@ export default class MaestroChoices extends BaseCommand {
     '<%= config.bin %> <%= command.id %> --face @alice --state "A startup offers me a lead role at a lower salary." --question "Should I take the offer?"',
     '<%= config.bin %> <%= command.id %> --face @head~socrates --state "A chain bakery opened across the street."',
     '<%= config.bin %> <%= command.id %> --face "(@alice | @bob)" --flash --state-file situation.txt -q "What next?" --json',
-    '<%= config.bin %> <%= command.id %> --face @alice:maestro-1 --state "The lease is up in March." --max-choices 3',
+    '<%= config.bin %> <%= command.id %> --face @alice:maestro-1/choices --state "The lease is up in March." --max-choices 3',
   ]
 
   static flags = {
@@ -28,7 +28,7 @@ export default class MaestroChoices extends BaseCommand {
     face: Flags.string({
       description:
         'The face: @alice, @owner~alice for one shared with you, or a composite such as "(@a | @b)" (operators | & - ^). ' +
-        'The full model, @owner~face:maestro-1, is accepted too.',
+        'The full model, @owner~face:maestro-1/choices, is accepted too.',
       required: true,
     }),
     flash: Flags.boolean({description: 'Run on maestro-1-flash: sooner, and 10 times the price.', default: false}),
@@ -42,7 +42,12 @@ export default class MaestroChoices extends BaseCommand {
     const {flags} = await this.parse(MaestroChoices)
     const client = this.makeClient(flags)
     const json = this.jsonEnabled()
-    const {model, problem} = maestroModel(flags.face, {flash: flags.flash, needsDecoder: false})
+    // The model string names the face, the encoder and the decoder: `@alice:maestro-1/choices`
+    const named = parseModel(flags.face)
+    if (named.upstream && named.downstream && named.downstream.toLowerCase() !== CHOICES_DECODER) {
+      this.error(`maestro:choices runs the ${CHOICES_DECODER} decoder: --face ${named.upstream}/${CHOICES_DECODER}, or the face alone.`)
+    }
+    const {model, problem} = maestroModel(flags.face, {flash: flags.flash, decoder: named.upstream && named.downstream ? undefined : CHOICES_DECODER, needsDecoder: true})
     if (problem || !model) this.error(problem ?? 'Name the face.')
 
     const body: Record<string, unknown> = {model}
