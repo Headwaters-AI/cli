@@ -20,7 +20,7 @@ import {faceRefusalHint, parseTemperature} from './utils.js'
 /** The chat flags without the state ones: maestro:chat is stateless. */
 export function statelessChatFlags() {
   const {conversation: _c, premise: _p, 'premise-description': _pd, 'premise-status': _ps, 'premise-depends-on': _pdo,
-    'premise-role': _pr, 'premise-origin': _po, 'causes-visible': _cv, session: _s, compaction: _cm, ...rest} = chatFlags()
+    'premise-role': _pr, 'premise-origin': _po, 'causes-visible': _cv, session: _s, ...rest} = chatFlags()
   return {
     face: Flags.string({
       description:

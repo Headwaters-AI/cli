@@ -74,7 +74,7 @@ hw maestro:chat                   # chat with a face on any chat model; --thread
 hw state:create --use / use / get # a state for this directory (.headwaters/state) and its proof
 hw state:add / edit / delete / claim
 hw state:refine / choices / decide # billed: refine a premise with a face, its candidates, their ranking
-hw state:items / compact / close  # a state's items in order, a face's compaction of it, closing it
+hw state:items / close           # a state's items in order, closing it
 
 hw models:list                    # the models you can name; --kind takes a list, or all
 hw media:list                     # the media a document can be, with what each covers
@@ -222,9 +222,8 @@ and writes into it by anyone else are refused until it is released (`--release`)
 Every write takes `--as <name>`.
 
 `state:add --jsonl <file>` adds many premises at once, and `state:edit --note` adds a note to one.
-`state:items` lists a state's items in order, `state:compact` writes a face's compaction of it, and
-`state:close` closes it. Like every `state:*` command, they work on this directory's state unless
-`--state-id` names another.
+`state:items` lists a state's items in order, and `state:close` closes it. Like every `state:*`
+command, they work on this directory's state unless `--state-id` names another.
 
 ## Authentication
 

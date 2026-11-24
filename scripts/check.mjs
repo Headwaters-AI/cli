@@ -1691,7 +1691,7 @@ eq('model problem: a bare face on choices', modelProblem('alice', 'upstream'), '
 eq('model problem: fine', [modelProblem('@alice:maestro-1', 'upstream'), modelProblem('(@a|@b):maestro-1-flash/jev-latest', 'both')], [undefined, undefined])
 eq('face: @ added once', [asFace('alice'), asFace('@alice'), asFace('(@a | @b)')], ['@alice', '@alice', '(@a | @b)'])
 eq('chat payload: messages', chatPayload('/v1/messages', 'm', [{role: 'user', content: 'hi'}], {stream: false, system: 's'}), {model: 'm', messages: [{role: 'user', content: 'hi'}], max_tokens: 1024, stream: false, system: 's'})
-eq('chat payload: responses', chatPayload('/v1/responses', 'm', [{role: 'user', content: 'hi'}], {stream: true, maxTokens: 50, compaction: 'c'}), {model: 'm', input: [{role: 'user', content: 'hi'}], stream: true, max_output_tokens: 50, compaction: 'c'})
+eq('chat payload: responses', chatPayload('/v1/responses', 'm', [{role: 'user', content: 'hi'}], {stream: true, maxTokens: 50}), {model: 'm', input: [{role: 'user', content: 'hi'}], stream: true, max_output_tokens: 50})
 eq('chat payload: completions in a state', chatPayload('/v1/chat/completions', 'm', [{role: 'user', content: 'hi'}], {stream: false, turn: {conversation: 'fs_1'}, oauthOnly: true}), {model: 'm', messages: [{role: 'user', content: 'hi'}], stream: false, conversation: 'fs_1', oauth_only: true})
 eq('reply text by endpoint', [replyText({choices: [{message: {content: 'a'}}]}, '/v1/chat/completions'), replyText({output: [{content: [{type: 'output_text', text: 'b'}]}]}, '/v1/responses'), replyText({content: [{type: 'text', text: 'c'}]}, '/v1/messages')], ['a', 'b', 'c'])
 eq('choices lines: numbered options and usage', choicesLines({object: 'choices', model: '@alice:maestro-1',
@@ -1936,17 +1936,15 @@ async function conversationsOverHttp() {
   try {
     let r = await run(['state:append', '--state-id', 'fs_1', '--premise', 'a=1'])
     eq('state:append is gone: state:add --jsonl and state:edit --note cover it', [r.code !== 0, /not found/i.test(r.out)], [true, true])
-    // state:items, state:compact and state:close use the directory's state, like every state: command
+    // state:items and state:close use the directory's state, like every state: command
     const sdir = fs.mkdtempSync(path.join(os.tmpdir(), 'hw-state-'))
     r = await runIn(sdir, ['state:items'])
     eq('state:items: no state here is refused before sending', [r.code !== 0, /No state here/.test(r.out)], [true, true])
     fs.mkdirSync(path.join(sdir, '.headwaters'))
     fs.writeFileSync(path.join(sdir, '.headwaters', 'state'), 'any\n')
-    r = await runIn(sdir, ['state:compact'])
-    eq('state:compact: the directory\'s state; any-face 422 says to name the face', /hw state:compact @<face>/.test(r.out), true)
+    seen.length = 0
     r = await runIn(sdir, ['state:compact', 'alice'])
-    eq('state:compact: the face is sent to the directory\'s state', last('/v1/states/any/compact'), {model: '@alice'})
-    eq('state:compact: no cause printed, the id is', [/Position/.test(r.out), /compaction: fcmp_1/.test(r.out)], [false, true])
+    eq('state:compact is gone: a causal state is queried with state:get', [r.code !== 0, /not found/i.test(r.out), seen.length], [true, true, 0])
     r = await runIn(sdir, ['state:close', '--yes', '--json'], {HW_STATE_ID: 'fs_1'})
     eq('state:close: HW_STATE_ID over the directory, and the server\'s answer', JSON.parse(r.stdout).deleted, true)
     r = await runIn(sdir, ['state:close', '--state-id', 'fs_1', '--yes', '--json'])

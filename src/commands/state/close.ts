@@ -7,8 +7,7 @@ import {seg} from '../../utils.js'
 
 export default class StateClose extends ReplyCommand {
   static description =
-    'Close a state. A closed state takes no more turns and cannot be read or compacted. Its ' +
-    'compactions stay usable until they expire. Free.'
+    'Close a state. A closed state takes no more writes and cannot be read. Free.'
 
   static examples = ['<%= config.bin %> <%= command.id %> --yes']
 

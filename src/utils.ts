@@ -546,9 +546,6 @@ export const SESSION_FLAG_DESCRIPTION =
   'The old name for --conversation, still accepted: add this turn to a session (a conversation), by id ' +
   '(from hw state:create). The session must be with this face.'
 
-export const COMPACTION_FLAG_DESCRIPTION =
-  'Read a compaction, by id (from hw state:compact), alongside the messages ' +
-  'sent. It must be of this face.'
 
 
 /**

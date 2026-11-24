@@ -13,7 +13,6 @@ import {modelProblem, parseModel} from './model.js'
 import {CHAT_COMPLETIONS_ENDPOINT, MESSAGES_ENDPOINT, RESPONSES_ENDPOINT} from './routing.js'
 import {
   CHAT_PARAM_FLAGS,
-  COMPACTION_FLAG_DESCRIPTION,
   MIN_MAX_OUTPUT_TOKENS,
   SESSION_FLAG_DESCRIPTION,
   STREAM_FLAG_DESCRIPTION,
@@ -40,7 +39,6 @@ export interface ChatOptions {
   stream: boolean
   oauthOnly?: boolean
   session?: string
-  compaction?: string
   /** --conversation, --premise and --causes-visible, as request fields. */
   turn?: Record<string, unknown>
 }
@@ -62,7 +60,6 @@ export function chatFlags() {
     temperature: Flags.string({description: 'Temperature (0.0-2.0).'}),
     ...conversationTurnFlags(),
     session: Flags.string({description: SESSION_FLAG_DESCRIPTION}),
-    compaction: Flags.string({description: COMPACTION_FLAG_DESCRIPTION}),
     'oauth-only': Flags.boolean({description: 'On a linked ChatGPT plan, run there or fail: never fall back to credits.', default: false}),
   }
 }
@@ -96,7 +93,6 @@ export function chatPayload(endpoint: string, model: string, turns: Turn[], o: C
   }
   if (o.temperature !== undefined) payload.temperature = o.temperature
   if (o.session) payload.session = o.session
-  if (o.compaction) payload.compaction = o.compaction
   if (o.turn) Object.assign(payload, o.turn)
   if (o.oauthOnly) payload.oauth_only = true
   return payload
