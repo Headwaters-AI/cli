@@ -1,0 +1,681 @@
+import {Flags} from '@oclif/core'
+import {HwAPIError} from './client.js'
+
+/** States: the server keeps the situation your agent builds. `/v1/conversations` is the old name. */
+export const CONVERSATIONS_PATH = '/v1/states'
+
+/** The most items one request to add to a conversation takes. */
+export const MAX_CONVERSATION_ITEMS = 20
+
+/** The most characters a premise key has, as the API takes it. */
+export const MAX_KEY_CHARS = 120
+
+/**
+ * What a premise key cannot hold, as the API refuses it: control characters (tabs and
+ * newlines among them), line and paragraph separators, and the bidirectional overrides.
+ */
+const KEY_REFUSED = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]/
+
+/** A premise's status, as the API takes it; `stated` when none is given. */
+export const PREMISE_STATUSES = ['stated', 'verified', 'assumed', 'unresolved', 'invalidated'] as const
+
+/** A premise's role, as the API takes it: `wanted` marks a goal. */
+export const PREMISE_ROLES = ['goal', 'test'] as const
+
+/** A support edge's kind: `and`, every such child must hold; `or`, one of the alternatives. */
+export const EDGE_KINDS = ['and', 'or'] as const
+
+/** A weighted `depends_on` entry: an edge with its kind, and the weight Jev or a person set. */
+export interface DependsOnEdge {
+  id: string
+  kind: string
+  p?: number
+  decision?: string
+}
+
+/** A `depends_on` entry as the API takes and returns it: a plain id, or an edge. */
+export type DependsOnEntry = string | DependsOnEdge
+
+/** Who set a premise, as the API takes it. */
+export const PREMISE_ORIGINS = ['human', 'agent', 'tool', 'web'] as const
+
+/** The most premises and decisions one `depends_on` names. */
+export const MAX_DEPENDS_ON = 200
+
+/** A conversation as the API returns it. */
+export interface Conversation {
+  object?: string
+  id?: string
+  model?: string | null
+  turns?: number
+  items?: number
+  causes_visible?: boolean
+  status?: string
+  created_at?: string
+  last_used_at?: string
+  expires_at?: string
+}
+
+/** A premise as a request sends it. */
+export interface Premise {
+  key: string
+  value: unknown
+  description?: string
+  status?: string
+  depends_on?: DependsOnEntry[]
+  /** `wanted` marks a goal, `test` a check to make pass; null clears it. */
+  role?: string | null
+  /** Who set it; null clears it. */
+  origin?: string | null
+}
+
+/** A key's current value, as the API returns it. */
+export interface PremiseState {
+  value?: unknown
+  description?: string | null
+  /** The effective status: `invalidated` when anything it depends on is. */
+  status?: string
+  /** The status the agent set, when it differs from `status`. */
+  asserted_status?: string
+  /** What invalidated it, when that was something it depends on. */
+  because?: string | null
+  depends_on?: DependsOnEntry[]
+  /** `wanted` when it is a goal, `test` when it is a check. */
+  role?: string
+  /** The face that proposed it (an option written into the state by hw state:choices). */
+  face?: string
+  /** Why the server set its status: an option pruned by a weighing decision. */
+  reason?: string
+  /** Who set it. */
+  origin?: string
+}
+
+/** One effective status a write changed. */
+export interface StatusChange {
+  kind?: string
+  key?: string
+  id?: string
+  from?: string
+  to?: string
+  because?: string | null
+}
+
+export const CONVERSATION_FLAG_DESCRIPTION =
+  'Add this turn to a state, by id (from hw state:create). Send only what is new: ' +
+  'the state so far is read before it. A state opened with one face takes only that face.'
+
+export const PREMISE_FLAG_DESCRIPTION =
+  'A premise, as key=value (repeatable): a named fact the face\'s answers depend on, kept on the ' +
+  'state. The key is plain text, 1 to 120 characters, split from the value at the first =: ' +
+  '--premise \'everyone can eat=yes\'. A key that holds = goes in double quotes: --premise \'"a=b"=yes\'. ' +
+  'The value is read as JSON when it is JSON ' +
+  '(50000, true, null, ["a","b"], {"max":3}) and as text otherwise, so plan=annual is the text "annual". ' +
+  'Quote it to keep a number as text: --premise \'code="007"\'. A newer value of a key replaces it from ' +
+  'then on. A key used for the first time needs --premise-description.'
+
+export const PREMISE_DESCRIPTION_FLAG_DESCRIPTION =
+  'What a --premise means, in plain words, as key="text" (repeatable, one per key), e.g. ' +
+  '--premise-description budget_usd="the most we can spend this year". Required the first time a key is ' +
+  'used in a state, and kept after that.'
+
+export const PREMISE_STATUS_FLAG_DESCRIPTION =
+  `A --premise's status, as key=status (repeatable, one per key): ${PREMISE_STATUSES.join(', ')}. ` +
+  'Left out, a new premise is stated. An invalidated premise invalidates everything that depends on it; ' +
+  'set it to another status to restore them.'
+
+export const PREMISE_DEPENDS_ON_FLAG_DESCRIPTION =
+  'What a --premise rests on, as key=a,b (repeatable, one per key): premise keys, decision ids and option ids ' +
+  '(opt_..., or cho_... for all of a choices list, from hw state:choices) already in ' +
+  `the state or set in the same request, at most ${MAX_DEPENDS_ON}, comma separated (a key that holds a comma ` +
+  'goes in double quotes: key=\'"x, y",b\'). key rests on each: each must hold for it to hold. Weigh an entry ' +
+  'with :and or :or, then a weight from 0 to 1, then @ and the decision that set it: ' +
+  'task=a,b:or:0.7,c:and:0.5@dec_x. An and entry is a child that must hold (its weight is importance); the or ' +
+  'entries are alternatives, one of which holds (their weights are probabilities and sum to 1). A plain entry is ' +
+  'an and with no weight. key= with nothing after it clears it; ' +
+  'left out, a newer value keeps what the key rested on before.'
+
+export const PREMISE_ROLE_FLAG_DESCRIPTION =
+  `A --premise's role, as key=role (repeatable, one per key): ${PREMISE_ROLES.join(' or ')}. wanted marks a goal, ` +
+  'the outcome the state is working toward (the work is done when every goal is achieved); test marks a check ' +
+  'that must pass. key= with nothing after it clears it; left out, a newer value keeps the role the key had.'
+
+export const PREMISE_ORIGIN_FLAG_DESCRIPTION =
+  `Who set a --premise, as key=origin (repeatable, one per key): ${PREMISE_ORIGINS.join(', ')}. key= with ` +
+  'nothing after it clears it; left out, a newer value keeps the origin the key had.'
+
+export const CAUSES_VISIBLE_TURN_FLAG_DESCRIPTION =
+  'Whether the face reads the other faces\' causes on this turn, in a conversation with several faces. ' +
+  'Leave it out to follow the state.'
+
+/**
+ * --conversation, --premise, --premise-description and --causes-visible, for
+ * every command that takes a turn. `suffix` is added to each description;
+ * `exclusive` names flags none of them goes with.
+ */
+export function conversationTurnFlags(opts: {suffix?: string; exclusive?: string[]} = {}) {
+  const d = (text: string) => (opts.suffix ? `${text} ${opts.suffix}` : text)
+  const exclusive = opts.exclusive
+  return {
+    conversation: Flags.string({description: d(CONVERSATION_FLAG_DESCRIPTION), exclusive}),
+    premise: Flags.string({description: d(`${PREMISE_FLAG_DESCRIPTION} Needs --conversation.`), multiple: true, exclusive}),
+    'premise-description': Flags.string({description: d(PREMISE_DESCRIPTION_FLAG_DESCRIPTION), multiple: true, dependsOn: ['premise'], exclusive}),
+    'premise-status': Flags.string({description: d(PREMISE_STATUS_FLAG_DESCRIPTION), multiple: true, dependsOn: ['premise'], exclusive}),
+    'premise-depends-on': Flags.string({description: d(PREMISE_DEPENDS_ON_FLAG_DESCRIPTION), multiple: true, dependsOn: ['premise'], exclusive}),
+    'premise-role': Flags.string({description: d(PREMISE_ROLE_FLAG_DESCRIPTION), multiple: true, dependsOn: ['premise'], exclusive}),
+    'premise-origin': Flags.string({description: d(PREMISE_ORIGIN_FLAG_DESCRIPTION), multiple: true, dependsOn: ['premise'], exclusive}),
+    'causes-visible': Flags.boolean({description: d(`${CAUSES_VISIBLE_TURN_FLAG_DESCRIPTION} Needs --conversation.`), allowNo: true, exclusive}),
+  }
+}
+
+/** The lines a conversation prints as. */
+export function conversationLines(c: Conversation): string[] {
+  const pairs: Array<[string, unknown]> = [
+    ['state', c.id],
+    ['face', c.model ?? (c.object === 'conversation' || c.object === 'state' ? 'any of your faces' : undefined)],
+    ['status', c.status],
+    ['turns', c.turns],
+    ['items', c.items],
+    ['causes', c.causes_visible === undefined ? undefined : c.causes_visible ? 'each face reads the other faces\' causes' : 'each face reads its own only'],
+    ['created', c.created_at],
+    ['last used', c.last_used_at],
+    ['expires', c.expires_at],
+  ]
+  return pairs.filter(([, v]) => v !== undefined && v !== null).map(([k, v]) => `${`${k}:`.padEnd(14)}${v}`)
+}
+
+/** What to add to a conversation refusal, or undefined when the server's message says it all. */
+export function conversationHint(err: HwAPIError): string | undefined {
+  if (err.statusCode === 404) {
+    return 'A state expires 30 days after it was last used, and a closed one cannot be used. ' +
+      'Start another with: hw state:create'
+  }
+  const fresh = err.statusCode === 422 ? /premise ('(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*") is new/.exec(err.message) : null
+  if (fresh) {
+    const key = unrepr(fresh[1])
+    if (/^[A-Za-z0-9_-]+$/.test(key)) return `Say what it means: --premise-description ${key}="what it means, in plain words"`
+    return `Say what it means: --premise-description ${shellWord(`${keyArg(key)}=what it means, in plain words`)}`
+  }
+  if (err.statusCode === 422 && /depends_on` names no premise or decision/.test(err.message)) {
+    return 'Name premise keys, decision ids and option ids already in the state (hw state:items <id>), or premises set in the same request.'
+  }
+  return undefined
+}
+
+/**
+ * A premise value as typed: JSON when it is JSON, and the text itself otherwise.
+ *
+ * A number that JSON reads as infinite would go out as null, so it stays text.
+ */
+export function premiseValue(raw: string): unknown {
+  if (raw.trim() === '') return raw
+  try {
+    const v = JSON.parse(raw) as unknown
+    if (typeof v === 'number' && !Number.isFinite(v)) return raw
+    return v
+  } catch {
+    return raw
+  }
+}
+
+/**
+ * A key or id written in double quotes at the start of `raw`, read as a JSON string:
+ * `"a=b"`, `"x, y"`. -> [the text, what follows it], or undefined when `raw` does not
+ * start with a closed double-quoted string.
+ */
+function quotedHead(raw: string): [string, string] | undefined {
+  const s = raw.trimStart()
+  if (!s.startsWith('"')) return undefined
+  for (let i = 1; i < s.length; i++) {
+    if (s[i] === '\\') {
+      i++
+      continue
+    }
+    if (s[i] === '"') {
+      try {
+        return [JSON.parse(s.slice(0, i + 1)) as string, s.slice(i + 1)]
+      } catch {
+        return undefined
+      }
+    }
+  }
+  return undefined
+}
+
+/**
+ * `key=rest`, split at the first `=`. A key that holds `=` (or starts with a double
+ * quote) is written in double quotes, as a JSON string: `"a=b"=rest`.
+ */
+function splitPair(raw: string, flag: string, shape: string): [string, string] {
+  const q = quotedHead(raw)
+  if (q) {
+    const rest = q[1].trimStart()
+    if (!rest.startsWith('=')) throw new Error(`${flag} takes ${shape}; after a quoted key comes = (got '${raw}').`)
+    return [q[0].trim(), rest.slice(1)]
+  }
+  const i = raw.indexOf('=')
+  if (i <= 0) throw new Error(`${flag} takes ${shape} (got '${raw}').`)
+  return [raw.slice(0, i).trim(), raw.slice(i + 1)]
+}
+
+function checkKey(key: string, flag: string): void {
+  const n = [...key].length
+  if (n < 1 || n > MAX_KEY_CHARS || KEY_REFUSED.test(key)) {
+    throw new Error(`${flag}: a premise key is plain text of 1 to ${MAX_KEY_CHARS} characters on one line, with no control characters (got ${JSON.stringify(key)}).`)
+  }
+}
+
+/** A key as a flag takes it back: in double quotes when it holds `=` or `,` or starts with one. */
+export function keyArg(key: string): string {
+  return /[=,]/.test(key) || key.startsWith('"') ? JSON.stringify(key) : key
+}
+
+/** `text` as one shell word: as it is when that is safe, in single quotes otherwise. */
+function shellWord(text: string): string {
+  return /^[A-Za-z0-9_@%+=:,./-]+$/.test(text) ? text : `'${text.replace(/'/g, "'\\''")}'`
+}
+
+/** A Python repr of a string ('...' or "..."), as the server quotes a key, back to the text. */
+function unrepr(q: string): string {
+  return q.slice(1, -1).replace(/\\(.)/g, '$1')
+}
+
+/**
+ * --premise key=value and --premise-description key=text, as the API's list of
+ * {key, value, description}. Throws with the sentence to show.
+ *
+ * Descriptions are matched by key, not by position: oclif does not keep the
+ * order of two different flags, and a key is what the API matches on too.
+ */
+export function parsePremises(
+  premises: string[] = [],
+  descriptions: string[] = [],
+  statuses: string[] = [],
+  dependsOn: string[] = [],
+  roles: string[] = [],
+  origins: string[] = [],
+): Premise[] {
+  const out: Premise[] = []
+  const seen = new Map<string, Premise>()
+  for (const raw of premises) {
+    const [key, value] = splitPair(raw, '--premise', 'key=value')
+    checkKey(key, '--premise')
+    if (seen.has(key)) throw new Error(`--premise sets '${key}' twice. Give each key once per request.`)
+    const p: Premise = {key, value: premiseValue(value)}
+    seen.set(key, p)
+    out.push(p)
+  }
+  const described = new Set<string>()
+  for (const raw of descriptions) {
+    const [key, text] = splitPair(raw, '--premise-description', 'key="what it means"')
+    checkKey(key, '--premise-description')
+    const p = seen.get(key)
+    if (!p) throw new Error(`--premise-description names '${key}', which no --premise sets. Add --premise ${key}=<value>.`)
+    if (described.has(key)) throw new Error(`--premise-description describes '${key}' twice. Give one description per key.`)
+    if (text.trim() === '') throw new Error(`--premise-description for '${key}' is empty. Say what it means, in plain words.`)
+    described.add(key)
+    p.description = text.trim()
+  }
+  const statused = new Set<string>()
+  for (const raw of statuses) {
+    const [key, text] = splitPair(raw, '--premise-status', 'key=status')
+    checkKey(key, '--premise-status')
+    const p = seen.get(key)
+    if (!p) throw new Error(`--premise-status names '${key}', which no --premise sets. Add --premise ${key}=<value>.`)
+    if (statused.has(key)) throw new Error(`--premise-status sets '${key}' twice. Give one status per key.`)
+    const status = text.trim().toLowerCase()
+    if (!(PREMISE_STATUSES as readonly string[]).includes(status)) {
+      throw new Error(`--premise-status for '${key}' is one of ${PREMISE_STATUSES.join(', ')} (got '${text}').`)
+    }
+    statused.add(key)
+    p.status = status
+  }
+  const linked = new Set<string>()
+  for (const raw of dependsOn) {
+    const [key, text] = splitPair(raw, '--premise-depends-on', 'key=a,b')
+    checkKey(key, '--premise-depends-on')
+    const p = seen.get(key)
+    if (!p) throw new Error(`--premise-depends-on names '${key}', which no --premise sets. Add --premise ${key}=<value>.`)
+    if (linked.has(key)) throw new Error(`--premise-depends-on sets '${key}' twice. List everything it rests on once, comma separated.`)
+    const deps = parseWeightedDependsOn(text, '--premise-depends-on')
+    if (deps.some((d) => entryId(d) === key)) throw new Error(`--premise-depends-on: premise '${key}' cannot depend on itself.`)
+    linked.add(key)
+    p.depends_on = deps
+  }
+  setOneOf(seen, roles, '--premise-role', 'role', PREMISE_ROLES)
+  setOneOf(seen, origins, '--premise-origin', 'origin', PREMISE_ORIGINS)
+  return out
+}
+
+/** key=value for `role` or `origin`: one of `allowed`, or nothing after = to clear it (null). */
+function setOneOf(seen: Map<string, Premise>, raws: string[], flag: string, field: 'role' | 'origin', allowed: readonly string[]): void {
+  const done = new Set<string>()
+  for (const raw of raws) {
+    const [key, text] = splitPair(raw, flag, `key=${field}`)
+    checkKey(key, flag)
+    const p = seen.get(key)
+    if (!p) throw new Error(`${flag} names '${key}', which no --premise sets. Add --premise ${key}=<value>.`)
+    if (done.has(key)) throw new Error(`${flag} sets '${key}' twice. Give one ${field} per key.`)
+    const v = text.trim().toLowerCase()
+    if (v !== '' && !allowed.includes(v)) {
+      throw new Error(`${flag} for '${key}' is ${allowed.length === 1 ? allowed[0] : `one of ${allowed.join(', ')}`}, or ${key}= to clear it (got '${text}').`)
+    }
+    done.add(key)
+    p[field] = v === '' ? null : v
+  }
+}
+
+/**
+ * A comma-separated `depends_on`, as the API's list: premise keys, decision
+ * ids and option ids (`opt_...`, or `cho_...` for a whole choices list),
+ * each once. Empty text is the empty list, which clears it. Throws with
+ * the sentence to show.
+ */
+export function parseDependsOn(raw: string, flag = '--depends-on'): string[] {
+  const names: string[] = []
+  let s = raw
+  for (;;) {
+    s = s.trimStart()
+    if (s === '') break
+    const q = quotedHead(s)
+    if (q) {
+      // a key that holds a comma is written in double quotes: "x, y",other
+      names.push(q[0])
+      s = q[1].trimStart()
+      if (s !== '' && !s.startsWith(',')) throw new Error(`${flag}: after a quoted key comes a comma or the end (got '${raw}').`)
+      s = s.slice(1)
+      continue
+    }
+    const i = s.indexOf(',')
+    names.push((i < 0 ? s : s.slice(0, i)).trim())
+    if (i < 0) break
+    s = s.slice(i + 1)
+  }
+  const out = [...new Set(names.map((x) => x.trim()).filter(Boolean))]
+  if (out.length > MAX_DEPENDS_ON) throw new Error(`${flag} names at most ${MAX_DEPENDS_ON} premises and decisions (got ${out.length}).`)
+  return out
+}
+
+/** A `depends_on` entry's id. */
+export function entryId(d: DependsOnEntry): string {
+  return typeof d === 'string' ? d : d.id
+}
+
+/** A `depends_on` entry as it prints: `key`, or `key (or 0.7)`. */
+export function entryText(d: DependsOnEntry): string {
+  if (typeof d === 'string') return keyArg(d)
+  const p = typeof d.p === 'number' ? ` ${Math.round(d.p * 100) / 100}` : ''
+  return `${keyArg(d.id)} (${d.kind}${p}${d.decision ? ` by ${d.decision}` : ''})`
+}
+
+/** The suffix that weighs an entry: `:kind`, then `:p`, then `@decision`, each optional. */
+const EDGE_SUFFIX = /^(?::(and|or)(?::([^:@,]*))?)?(?:@(dec_[A-Za-z0-9_-]+))?$/
+const UNQUOTED_ENTRY = /^(.*?)((?::(?:and|or)(?::[^:@,]*)?)?(?:@dec_[A-Za-z0-9_-]+)?)$/
+
+function edgeOf(id: string, suffix: string, flag: string, raw: string): DependsOnEntry {
+  const m = EDGE_SUFFIX.exec(suffix)
+  if (!m) throw new Error(`${flag}: '${suffix}' after '${id}' is not :and or :or, then :p, then @dec_... (got '${raw}').`)
+  const [, kind, p, decision] = m
+  if (!kind && !decision) return id
+  if (!kind) throw new Error(`${flag}: give '${id}' a kind before its decision, :and or :or (as ${id}:or:0.7@${decision}).`)
+  const out: DependsOnEdge = {id, kind}
+  if (p !== undefined) {
+    const n = Number(p)
+    if (p.trim() === '' || !Number.isFinite(n) || n < 0 || n > 1) throw new Error(`${flag}: the weight of '${id}' is a number from 0 to 1 (got '${p}').`)
+    out.p = n
+  }
+  if (decision) out.decision = decision
+  return out
+}
+
+/**
+ * A `--premise-depends-on` list, with weights: comma separated, each entry an id
+ * (a premise key, a decision id, an option or choices id) or the id with its edge:
+ *
+ *   a                  an `and` edge with no weight, as before
+ *   b:or               an `or` edge (one of the alternatives) with no weight yet
+ *   b:or:0.7           an `or` edge with probability 0.7
+ *   c:and:0.5@dec_x    an `and` edge with importance 0.5, set by decision dec_x
+ *
+ * A key that holds a comma, or ends in what reads as a weight (`x:or`), goes in double quotes,
+ * with the weight after the closing quote: '"x, y":or:0.3'. Throws with the sentence to show.
+ */
+export function parseWeightedDependsOn(raw: string, flag = '--premise-depends-on'): DependsOnEntry[] {
+  const out: DependsOnEntry[] = []
+  let s = raw
+  for (;;) {
+    s = s.trimStart()
+    if (s === '') break
+    const q = quotedHead(s)
+    let entry: DependsOnEntry
+    if (q) {
+      const rest = q[1]
+      const i = rest.indexOf(',')
+      entry = edgeOf(q[0], (i < 0 ? rest : rest.slice(0, i)).trim(), flag, raw)
+      if (i < 0) s = ''
+      else s = rest.slice(i + 1)
+    } else {
+      const i = s.indexOf(',')
+      const tok = (i < 0 ? s : s.slice(0, i)).trim()
+      const m = UNQUOTED_ENTRY.exec(tok) as RegExpExecArray
+      if (m[1].trim() === '') throw new Error(`${flag}: an entry needs an id before its weight (got '${tok}').`)
+      entry = edgeOf(m[1].trim(), m[2], flag, raw)
+      if (i < 0) s = ''
+      else s = s.slice(i + 1)
+    }
+    const id = entryId(entry)
+    const was = out.findIndex((d) => entryId(d) === id)
+    if (was >= 0) {
+      if (typeof entry !== 'string' || typeof out[was] !== 'string') throw new Error(`${flag} names '${id}' twice. Give each entry once.`)
+      continue
+    }
+    out.push(entry)
+  }
+  if (out.length > MAX_DEPENDS_ON) throw new Error(`${flag} names at most ${MAX_DEPENDS_ON} premises and decisions (got ${out.length}).`)
+  return out
+}
+
+/**
+ * The conversation fields of a turn (chat, decide, causes): `conversation`,
+ * `premises` and `causes_visible`, when given. `session` is sent by
+ * chatExtras; it is the old name for the same id and counts as one here.
+ * Throws with the sentence to show.
+ */
+export function conversationFields(flags: {
+  conversation?: string
+  session?: string
+  premise?: string[]
+  'premise-description'?: string[]
+  'premise-status'?: string[]
+  'premise-depends-on'?: string[]
+  'premise-role'?: string[]
+  'premise-origin'?: string[]
+  'causes-visible'?: boolean
+}): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  if (flags.conversation && flags.session && flags.conversation !== flags.session) {
+    throw new Error('--session is the old name for --conversation: pass one of them, not two different ids.')
+  }
+  const premises = parsePremises(flags.premise, flags['premise-description'], flags['premise-status'], flags['premise-depends-on'],
+    flags['premise-role'], flags['premise-origin'])
+  const inConversation = Boolean(flags.conversation || flags.session)
+  if (!inConversation && (premises.length > 0 || flags['causes-visible'] !== undefined)) {
+    throw new Error('Premises and --causes-visible belong to a state: add --conversation <id> (from hw state:create).')
+  }
+  if (flags.conversation) out.conversation = flags.conversation
+  if (premises.length > 0) out.premises = premises
+  if (flags['causes-visible'] !== undefined) out.causes_visible = flags['causes-visible']
+  return out
+}
+
+/**
+ * The items a client adds: its premises first, then its messages, so a
+ * message is read with the premises sent alongside it already in force.
+ */
+export function clientItems(messages: string[] = [], premises: Premise[] = []): Array<Record<string, unknown>> {
+  return [...premises.map((p) => ({...p})), ...messages.map((content) => ({type: 'message', role: 'user', content}))]
+}
+
+/** A value as it prints: JSON, so the text "50000" and the number 50000 read differently. */
+export function shownValue(v: unknown): string {
+  return v === undefined ? '-' : JSON.stringify(v)
+}
+
+/** A premise's status as it prints: nothing for a plain stated one. */
+function statusNote(p: PremiseState | undefined): string {
+  if (!p) return ''
+  const parts: string[] = []
+  if (p.status && p.status !== 'stated') parts.push(p.status)
+  if (p.asserted_status) parts.push(`set ${p.asserted_status}`)
+  if (p.because) parts.push(`because ${p.because}`)
+  if (p.depends_on && p.depends_on.length > 0) parts.push(`rests on ${p.depends_on.map(entryText).join(', ')}`)
+  if (p.role) parts.push(p.role)
+  if (p.origin) parts.push(`from ${p.origin}`)
+  if (p.face) parts.push(`proposed by @${p.face}`)
+  if (p.reason) parts.push(p.reason)
+  return parts.length > 0 ? `  [${parts.join('; ')}]` : ''
+}
+
+/** status_changes, as lines; none when the list is empty. */
+export function statusChangeLines(changes: StatusChange[] | undefined): string[] {
+  if (!changes || changes.length === 0) return []
+  const lines = [`${changes.length === 1 ? '1 status changed' : `${changes.length} statuses changed`}:`]
+  for (const c of changes) {
+    const what = c.kind === 'decision' ? `decision ${c.id ?? '?'}` : `premise ${c.key ?? '?'}`
+    lines.push(`  ${what}: ${c.from ?? '-'} -> ${c.to ?? '-'}${c.because ? ` (because ${c.because})` : ''}`)
+  }
+  return lines
+}
+
+/** The premises in force, one per line. */
+export function premiseLines(premises: Record<string, PremiseState> | undefined): string[] {
+  const entries = Object.entries(premises ?? {})
+  if (entries.length === 0) return ['premises: none']
+  const lines = ['premises:']
+  for (const [key, p] of entries) {
+    lines.push(`  ${keyArg(key)} = ${shownValue(p?.value)}${statusNote(p)}${p?.description ? `   (${p.description})` : ''}`)
+  }
+  return lines
+}
+
+function textOf(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => (part && typeof part === 'object' ? String((part as Record<string, unknown>).text ?? '') : String(part ?? '')))
+      .join('')
+  }
+  return content === undefined || content === null ? '' : JSON.stringify(content)
+}
+
+function parsed(raw: unknown): Record<string, unknown> {
+  if (raw && typeof raw === 'object') return raw as Record<string, unknown>
+  if (typeof raw !== 'string') return {}
+  try {
+    const v = JSON.parse(raw) as unknown
+    return v && typeof v === 'object' ? (v as Record<string, unknown>) : {}
+  } catch {
+    return {}
+  }
+}
+
+function questionText(q: Record<string, unknown>): string {
+  return String(q.instructions ?? q.question ?? q.name ?? q.id ?? '?')
+}
+
+function choiceOf(out: Record<string, unknown>): string {
+  if (out.choice !== undefined && out.choice !== null) return String(out.choice)
+  const answer = out.answer
+  if (answer && typeof answer === 'object') {
+    const a = answer as Record<string, unknown>
+    for (const k of ['choice', 'value', 'score', 'answer']) if (a[k] !== undefined && a[k] !== null) return String(a[k])
+  }
+  return answer === undefined || answer === null ? '-' : String(answer)
+}
+
+/**
+ * A conversation's items as lines a person reads: each message, decision and
+ * premise once, in order. A decision is one item; a premise, or a decision
+ * stored before decisions became one item, is two (the call and its output),
+ * printed together at the output, under the output's id.
+ */
+export function itemLines(items: Array<Record<string, unknown>>): string[] {
+  const calls = new Map<string, Record<string, unknown>>()
+  const lines: string[] = []
+  for (const it of items) {
+    const id = String(it.id ?? '')
+    const head = id ? `${id.padEnd(7)}` : ''
+    const pad = ' '.repeat(head.length)
+    if (it.type === 'function_call') {
+      calls.set(String(it.call_id ?? ''), it)
+      continue
+    }
+    if (it.type === 'decision') {
+      const answer = (it.answer && typeof it.answer === 'object' ? it.answer : {}) as Record<string, unknown>
+      const question = (it.question && typeof it.question === 'object' ? it.question : {}) as Record<string, unknown>
+      const result = answer.result === undefined || answer.result === null ? '-' : String(answer.result)
+      const status = it.status === 'invalidated' ? `   [invalidated${it.because ? `, because ${String(it.because)}` : ''}]` : ''
+      lines.push(`${head}${String(it.face ?? 'face')}${it.model ? ` (${it.model})` : ''} decided: ${questionText(question)} -> ${result}${status}`)
+      if (typeof it.cause === 'string' && it.cause) lines.push(`${pad}cause: ${it.cause}`)
+      continue
+    }
+    if (it.type === 'function_call_output') {
+      const call = calls.get(String(it.call_id ?? ''))
+      const out = parsed(it.output)
+      if (call?.name === 'premise') {
+        const key = String(parsed(call.arguments).key ?? '?')
+        const desc = typeof out.description === 'string' && out.description ? `   (${out.description})` : ''
+        lines.push(`${head}premise  ${keyArg(key)} = ${shownValue(out.value)}${desc}`)
+      } else if (call?.name === 'decision') {
+        const who = String(it.face ?? call.face ?? 'face')
+        const model = it.model ?? call.model
+        lines.push(`${head}${who}${model ? ` (${model})` : ''} decided: ${questionText(parsed(call.arguments))} -> ${choiceOf(out)}`)
+        if (typeof out.cause === 'string' && out.cause) lines.push(`${pad}cause: ${out.cause}`)
+      } else {
+        lines.push(`${head}${String(call?.name ?? 'output')}: ${typeof it.output === 'string' ? it.output : JSON.stringify(it.output)}`)
+      }
+      continue
+    }
+    if (it.type === 'message' || it.role !== undefined) {
+      const who = it.role === 'user' ? 'you' : `${String(it.name ?? it.role ?? '?')}${it.model ? ` (${it.model})` : ''}`
+      const text = textOf(it.content)
+      const cause = typeof it.cause === 'string' && it.cause ? it.cause : ''
+      // A turn that asked for the cause alone has no reply, only the cause.
+      if (!text && cause) {
+        lines.push(`${head}${who}'s cause: ${cause}`)
+        continue
+      }
+      lines.push(`${head}${who}: ${text}`)
+      if (cause) lines.push(`${pad}cause: ${cause}`)
+      continue
+    }
+    lines.push(`${head}${String(it.type ?? 'item')}`)
+  }
+  return lines
+}
+
+/** An earlier decision made while a changed key held another value, as the API lists it. */
+export interface StaleDecision {
+  call_id?: string
+  question?: Record<string, unknown>
+  choice?: unknown
+  face?: string
+  changed?: Record<string, {was?: unknown; now?: unknown}>
+  via?: string | null
+}
+
+/** decisions_made_under_old_values, as lines; none when the list is empty. */
+export function staleDecisionLines(stale: StaleDecision[] | undefined): string[] {
+  if (!stale || stale.length === 0) return []
+  const lines = [
+    `${stale.length === 1 ? '1 earlier decision was' : `${stale.length} earlier decisions were`} made under a value you just changed. Nothing was decided again:`,
+  ]
+  for (const d of stale) {
+    const q = d.question ? questionText(d.question) : '?'
+    const choice = d.choice === undefined || d.choice === null ? '-' : String(d.choice)
+    lines.push(`  ${d.face ?? 'face'}: ${q} -> ${choice}${d.call_id ? `   [${d.call_id}]` : ''}${d.via ? `, through ${d.via}` : ''}`)
+    for (const [key, c] of Object.entries(d.changed ?? {})) {
+      lines.push(`    ${key}: was ${shownValue(c?.was)}, now ${shownValue(c?.now)}`)
+    }
+  }
+  return lines
+}

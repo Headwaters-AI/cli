@@ -1,0 +1,2291 @@
+/**
+ * Offline checks for the logic that decides what the CLI tells people.
+ *
+ * This repo validates by hand against a running backend, which is the only way
+ * to check what the API actually does. These are the cases hand-testing cannot
+ * reach: a stale compile needs a version counter deliberately advanced past a
+ * synced one, and a truncated list needs a server that keeps claiming more
+ * pages. Both are also where being wrong is expensive: a false "stale" sends
+ * someone to pay for a recompile they do not need.
+ *
+ * No framework and no network. Run with: npm run check
+ */
+import http from 'node:http'
+import os from 'node:os'
+import path from 'node:path'
+import {spawnSync, execFile} from 'node:child_process'
+import {
+  freshnessOf,
+  revisionsBehind,
+  messagesAfterSync,
+  freshnessLines,
+  freshnessSummary,
+  uploadWarningLines,
+  readablePatternError,
+  compileProgressLabel,
+  compileStatusOf,
+  readableLimit,
+  extractStreamDelta,
+  retryOnceOnWarmUp,
+  faceRefusalHint,
+  streamChat,
+  seg,
+  badFaceName, badToolNames, compileCostNote,
+  table,
+  usd,
+  isCalendarDate,
+  parseBudget,
+  parseTemperature,
+  faceStyles,
+  localTime,
+  startsAtLine,
+  msUntilStart,
+  makeScheduleLines,
+  makeRefusalMessage,
+  compileLimitText,
+  compileFieldLine,
+  similarityText,
+  transcriptSpeakers,
+  transcriptWarningLines,
+  documentWarningLines,
+  postChat,
+  withoutWarnings,
+  renameFaceFields,
+} from '../dist/utils.js'
+import fs from 'node:fs'
+import {HwClient, HwAPIError, refusalGuidance, parseRetryAfter, readableDetail, streamErrorOf, heldChatError, looksOutOfDate, missingFieldsNote, outOfDateHint, rateLimitWait, compareVersions, CLI_VERSION} from '../dist/client.js'
+import {parseDecisionOption, questionsProblem, toOpenAIDecision, fromOpenAIAnswers, decisionLines, warmUpWait, MAX_WARM_UP_WAIT_S, heldDecisionError} from '../dist/decisions.js'
+import {allowanceLines, cardLine, tokens, percentUsed, llmCostLab} from '../dist/billing.js'
+import {decisionModelError} from '../dist/routing.js'
+import {publicJob, autoTrigger, reportWarnings, jobFailureMessage, servedBy, styleCreditRefusal} from '../dist/style.js'
+import {pollCompileProgress, pollUntilPaused} from '../dist/poll.js'
+import {childPath} from '../dist/paths.js'
+import {score10} from '../dist/fidelity.js'
+import {resultLines, benchmarkHint} from '../dist/benchmark.js'
+import {parseWeightedDependsOn, entryText} from '../dist/conversation.js'
+import {pickParallel, nextLines, synopsisLines} from '../dist/synopsis.js'
+import {weighLines} from '../dist/commands/maestro/decide.js'
+import {conversationHint, parsePremises, parseDependsOn, premiseValue, conversationFields, clientItems, conversationLines, itemLines, premiseLines, staleDecisionLines, statusChangeLines} from '../dist/conversation.js'
+import {choicesLines, choicesHint} from '../dist/choices.js'
+import {mediaLines, mediaOf} from '../dist/media.js'
+import {parseModel, modelProblem, asFace} from '../dist/model.js'
+import {chatPayload, replyText} from '../dist/chat.js'
+
+let failed = 0
+let ran = 0
+
+function eq(label, actual, expected) {
+  ran++
+  const a = JSON.stringify(actual)
+  const e = JSON.stringify(expected)
+  if (a === e) return
+  failed++
+  console.error(`FAIL  ${label}\n      expected ${e}\n      got      ${a}`)
+}
+
+// --- freshness: the two unknown states must never read as stale ---------------
+eq('current', freshnessOf({version: 3, synced_version: 3}), 'current')
+eq('ahead of itself', freshnessOf({version: 2, synced_version: 5}), 'current')
+eq('stale', freshnessOf({version: 5, synced_version: 3}), 'stale')
+eq('synced_version null', freshnessOf({version: 1, synced_version: null}), 'unknown')
+eq('version null', freshnessOf({version: null, synced_version: 1}), 'unknown')
+eq('both absent', freshnessOf({}), 'unknown')
+
+eq('behind: stale', revisionsBehind({version: 5, synced_version: 3}), 2)
+eq('behind: current', revisionsBehind({version: 3, synced_version: 3}), null)
+eq('behind: unknown', revisionsBehind({version: 3, synced_version: null}), null)
+
+// --- messages against synced_at ----------------------------------------------
+const sync = '2026-09-07T08:28:05.809735'
+eq('msg before sync', messagesAfterSync([{timestamp: '2026-09-07T08:21:15.774859'}], sync), {newer: 0, unknown: 0})
+eq('msg after sync', messagesAfterSync([{timestamp: '2026-09-07T09:00:00.000000'}], sync), {newer: 1, unknown: 0})
+// A zone marker must not shift a timestamp into the future and invent a change.
+eq('earlier but Z-suffixed', messagesAfterSync([{timestamp: '2026-09-07T08:00:00Z'}], sync), {newer: 0, unknown: 0})
+eq('earlier with offset', messagesAfterSync([{timestamp: '2026-09-07T08:00:00+02:00'}], sync), {newer: 0, unknown: 0})
+eq('no timestamp', messagesAfterSync([{}, {timestamp: null}], sync), {newer: 0, unknown: 2})
+eq('unparseable sync', messagesAfterSync([{timestamp: sync}], 'not-a-date'), {newer: 0, unknown: 1})
+eq('no synced_at', messagesAfterSync([{timestamp: sync}], null), {newer: 0, unknown: 0})
+eq('no messages', messagesAfterSync([], sync), {newer: 0, unknown: 0})
+
+// --- the lines people actually read ------------------------------------------
+eq('current says nothing', freshnessLines({version: 1, synced_version: 1, compilable: true}, 'CMD'), [])
+eq('unknown says nothing', freshnessLines({version: 1, synced_version: null, compilable: true}, 'CMD'), [])
+eq(
+  'stale offers the recompile',
+  freshnessLines({version: 5, synced_version: 3, compilable: true}, 'CMD'),
+  ['Stale: the text is 2 revision(s) ahead of the last compile.', '  Bring the compile up to date with: CMD'],
+)
+// Stale but refused: offering a recompile here is advice to pay for a refusal.
+const blocked = freshnessLines(
+  {version: 5, synced_version: 3, compilable: false, compile_blocked_reason: 'no_medium'},
+  'CMD',
+  'THE-ID',
+)
+eq('stale+blocked withholds the recompile', blocked.some((l) => l.includes('CMD')), false)
+eq('stale+blocked names the refusal', blocked[1], 'A compile would be refused: no medium declared.')
+eq('the fix carries the real id', blocked[2].includes('THE-ID'), true)
+eq('and no placeholder survives', blocked.some((l) => l.includes('<id>')), false)
+
+eq(
+  'summary counts both readings',
+  freshnessSummary(
+    [
+      {version: 1, synced_version: 1, compilable: true},
+      {version: 5, synced_version: 3, compilable: true},
+      {version: 1, synced_version: 1, compilable: false, compile_blocked_reason: 'no_medium'},
+      {version: 1, synced_version: 1, compilable: false, compile_blocked_reason: 'corpus_thread'},
+      {version: 1, synced_version: 1, compilable: false, compile_blocked_reason: 'corpus_thread'},
+    ],
+    'document',
+  ),
+  [
+    '1 document(s) changed since the last compile and need recompiling.',
+    '3 the server would refuse: 2 corpus thread, 1 no medium declared.',
+  ],
+)
+eq('summary silent when all is well', freshnessSummary([{version: 1, synced_version: 1, compilable: true}], 'document'), [])
+
+// --- upload warnings: a 200 says nothing about what was dropped -------------
+eq('clean upload is silent', uploadWarningLines({warnings: [], warning_count: 0}), [])
+eq('absent keys are silent', uploadWarningLines({}), [])
+eq(
+  'the server sentence is preferred over ours',
+  uploadWarningLines({
+    warning_count: 1,
+    warnings: [{code: 'unattributed_lines', message: '3 line(s) were left out.', count: 3}],
+  }),
+  [
+    'Warning: 1 part(s) of the file did not become messages.',
+    '  unattributed_lines: 3 line(s) were left out.',
+    '    If they matter, give them a speaker prefix and upload again.',
+  ],
+)
+// No message: ours stands in, because the entry shape is open-ended.
+eq(
+  'our sentence stands in',
+  uploadWarningLines({warning_count: 1, warnings: [{code: 'face_speaker_not_found'}]})[1].includes('matched nobody'),
+  true,
+)
+// An unrecognised code must still be reported, not swallowed.
+eq(
+  'unknown code still reported',
+  uploadWarningLines({warning_count: 1, warnings: [{code: 'something_new'}]}),
+  ['Warning: 1 part(s) of the file did not become messages.', '  something_new: see --json for detail.'],
+)
+// warning_count is exact while the list is capped, so the count wins.
+eq(
+  'capped list says so',
+  uploadWarningLines({warning_count: 9, warnings: [{code: 'unattributed_lines', message: 'x'}]}).at(-1),
+  '  Showing 1 of 9; the rest are in the same shape.',
+)
+eq('uncapped list says nothing extra', uploadWarningLines({
+  warning_count: 1,
+  warnings: [{code: 'unattributed_lines', message: 'x'}],
+}).some((l) => l.includes('Showing')), false)
+
+// --- a rejected enum should read as a sentence, not a regex -----------------
+eq(
+  'query pattern becomes words',
+  readablePatternError("query → sort: String should match pattern '^(created|alias|relevance|usage)$'"),
+  '--sort must be one of: created, alias, relevance, usage',
+)
+eq(
+  'order too',
+  readablePatternError("query → order: String should match pattern '^(asc|desc)$'"),
+  '--order must be one of: asc, desc',
+)
+// An underscore field name becomes the flag spelling a caller would have typed.
+eq(
+  'underscores become dashes',
+  readablePatternError("body → sort_by: String should match pattern '^(a|b)$'"),
+  '--sort-by must be one of: a, b',
+)
+// Anything that is not that shape is passed through untouched, so an unrelated
+// 422 is never reworded into something it does not say.
+for (const [label, msg] of [
+  ['plain message', 'Face not found'],
+  ['pattern without alternatives', "query → sort: String should match pattern '^[a-z]+$'"],
+  ['different 422 shape', 'query → limit: Input should be less than or equal to 500'],
+  ['empty', ''],
+]) {
+  eq(`passthrough: ${label}`, readablePatternError(msg), msg)
+}
+
+// --- compile progress: status and progress, a percentage only where one is real
+// Queued work waits behind the face's other sources and reads as queued, never "0%".
+eq('source, queued', compileProgressLabel({status: 'queued', progress: 0}), 'queued')
+eq('source, compiling', compileProgressLabel({status: 'compiling', progress: 0.43}), 'compiling, 43%')
+eq('source, compiled', compileProgressLabel({status: 'compiled', progress: 1}), 'compiled')
+eq('source, not compiled', compileProgressLabel({status: 'not_compiled', progress: 0}), 'not compiled')
+eq('source, paused', compileProgressLabel({status: 'paused', progress: 0.5}), 'paused, 50%')
+eq('source, transcribing without progress', compileProgressLabel({status: 'transcribing', progress: null}), 'transcribing')
+// A state added after this release reads as still running, never as done or failed.
+eq('unknown status', compileProgressLabel({status: 'warming_up', progress: 0.2}), 'compiling, 20%')
+eq('status of unknown', compileStatusOf('warming_up'), 'compiling')
+eq('status of null', compileStatusOf(null), null)
+// A group that says it is measurable gets a percentage.
+eq('group, measurable', compileProgressLabel({measurable: true, progress: 0.4}), '40%')
+// A group that says it is not gets none, even if a number is present.
+eq('group, not measurable', compileProgressLabel({measurable: false, progress: null}), 'working, progress not known yet')
+eq('group, not measurable, number present', compileProgressLabel({measurable: false, progress: 0.4}), 'working, progress not known yet')
+eq('empty object', compileProgressLabel({}), 'working, progress not known yet')
+// Out of range is clamped rather than printed as 140%.
+eq('clamped', compileProgressLabel({status: 'compiling', progress: 1.4}), 'compiling, 100%')
+// The old fields are gone: a body carrying only them has no progress to show.
+eq('old fields ignored', compileProgressLabel({parts_completed: 8, parts_total: 20}), 'working, progress not known yet')
+
+// --- scheduled start and rush: when a compile starts, in the local zone --------
+{
+  const tz = process.env.TZ
+  process.env.TZ = 'UTC'
+  const now = Date.parse('2026-10-22T14:22:00Z')
+  const at = '2026-10-22T15:00:00+00:00'
+  eq('start: local time', localTime(at), '2026-10-22 15:00 UTC')
+  eq('start: no zone is UTC', localTime('2026-10-22T15:00:00'), '2026-10-22 15:00 UTC')
+  eq('start: ahead is the scheduled start', startsAtLine(at, now), 'Scheduled start: 2026-10-22 15:00 UTC (in 38 min)')
+  eq('start: over an hour', startsAtLine('2026-10-22T15:30:00Z', now), 'Scheduled start: 2026-10-22 15:30 UTC (in 1 h 8 min)')
+  eq('start: past is when it started', startsAtLine('2026-10-22T14:00:00Z', now), 'Started: 2026-10-22 14:00 UTC')
+  eq('start: null starts at once', startsAtLine(null, now), undefined)
+  eq('start: wait', msUntilStart(at, now), 38 * 60_000)
+  eq('start: no wait once past', msUntilStart('2026-10-22T14:00:00Z', now), 0)
+  eq('label: queued with a scheduled start', compileProgressLabel({status: 'queued', progress: 0, starts_at: at}, now), 'queued, starts 2026-10-22 15:00 UTC')
+  eq('label: queued as a rush', compileProgressLabel({status: 'queued', progress: 0, starts_at: at, rush: true}, now), 'queued, rush')
+  eq('label: queued, start passed', compileProgressLabel({status: 'queued', progress: 0, starts_at: '2026-10-22T14:00:00Z'}, now), 'queued')
+  eq('make: scheduled', makeScheduleLines({starts_at: at, rush: false}, false, now), ['Scheduled start: 2026-10-22 15:00 UTC (in 38 min)'])
+  eq('make: rush', makeScheduleLines({starts_at: '2026-10-22T14:22:00Z', rush: true}, true, now), ['Rush: it starts now, at the rush rate.'])
+  eq('make: at once says nothing', makeScheduleLines({starts_at: null, rush: false}, false, now), [])
+  eq('make: --rush where it starts at once', makeScheduleLines({starts_at: null, rush: false}, true, now), ['It starts now at the standard rate, so --rush changed nothing and costs nothing extra.'])
+  eq('field: start ahead', compileFieldLine('starts_at', at, now), 'scheduled start: 2026-10-22 15:00 UTC (in 38 min)')
+  eq('field: null start left out', compileFieldLine('starts_at', null, now), null)
+  eq('field: rush false left out', compileFieldLine('rush', false), null)
+  eq('field: rush true', compileFieldLine('rush', true), 'rush: yes, at the rush rate')
+  eq('field: other keys untouched', compileFieldLine('status', 'queued'), undefined)
+  process.env.TZ = tz ?? ''
+  if (tz === undefined) delete process.env.TZ
+}
+// tokens_limit: 0 is no allowance and -1 unlimited, never "0/0" or "-1".
+eq('compile limit: none', compileLimitText(0), 'none on this plan (compiles are paid per source token)')
+eq('compile limit: unlimited', compileLimitText(-1), 'unlimited')
+eq('compile limit: a number', compileLimitText(250000), '250,000 source tokens')
+eq('field: tokens_limit 0', compileFieldLine('tokens_limit', 0), 'compile allowance this month: none on this plan (compiles are paid per source token)')
+eq('field: tokens_limit -1', compileFieldLine('tokens_limit', -1), 'compile allowance this month: unlimited')
+eq('field: tokens_used', compileFieldLine('tokens_used', 1200), 'compiled this month: 1,200 source tokens')
+{
+  const rushErr = new HwAPIError(402, 'Payment required: not enough credit for the rush', {errorCode: 'insufficient_credit_for_rush', details: {rush_premium_usd: 1.25}})
+  eq('rush refusal: names the premium', makeRefusalMessage(rushErr, 'd1'), 'Payment required: not enough credit for the rush\nRush premium: $1.25, paid from credit.')
+  eq('rush refusal: guidance', /without --rush/.test(refusalGuidance(402, 'insufficient_credit_for_rush', 'x') ?? ''), true)
+  eq('rush refusal: still says top up', /billing:topup/.test(refusalGuidance(402, 'insufficient_credit_for_rush', 'x') ?? ''), true)
+  eq('blocked refusal: the fix', makeRefusalMessage(new HwAPIError(400, 'No medium.', {errorCode: 'no_medium'}), 'd9').includes('face:doc:edit d9'), true)
+  eq('other refusal: status and message', makeRefusalMessage(new HwAPIError(500, 'boom'), 'd1'), 'HTTP 500: boom')
+  eq('too late to rush: says so', /--rush no longer applies/.test(makeRefusalMessage(new HwAPIError(409, 'This document\'s compile has already started, so it can no longer be rushed.', {errorCode: 'compile_already_started'}), 'd1')), true)
+  eq('queued make: points at --rush', /again with --rush/.test(makeRefusalMessage(new HwAPIError(409, 'Compilation already in progress for this document'), 'd1')), true)
+  eq('field: rush premium', compileFieldLine('rush_premium_usd', 1.25), 'rush now: $1.25 from credit (make again with --rush)')
+  eq('field: rush premium null left out', compileFieldLine('rush_premium_usd', null), null)
+  eq('field: rush premium zero', /no extra charge/.test(compileFieldLine('rush_premium_usd', 0) ?? ''), true)
+}
+
+// --- pagination, against a server that is deliberately awkward ---------------
+async function paging() {
+  let endless = false
+  let repeatCursor = false
+  const srv = http.createServer((req, res) => {
+    const u = new URL(req.url, 'http://x')
+    res.setHeader('content-type', 'application/json')
+    if (u.pathname !== '/v1/faces') {
+      res.statusCode = 404
+      res.end('{}')
+      return
+    }
+
+    const limit = Number(u.searchParams.get('limit') ?? 100)
+    const start = Number((u.searchParams.get('cursor') ?? 'c0').slice(1))
+    const total = 40
+    const rows = []
+    for (let i = start; i < Math.min(start + limit, total); i++) rows.push({alias: `f${i}`})
+    const more = endless || start + limit < total
+    res.end(
+      JSON.stringify({
+        object: 'list',
+        data: rows,
+        has_more: more,
+        next_cursor: more ? (repeatCursor ? 'c0' : `c${start + limit}`) : null,
+      }),
+    )
+  })
+
+  await new Promise((r) => srv.listen(0, r))
+  const client = new HwClient(`http://127.0.0.1:${srv.address().port}`, undefined, 'sk-check')
+
+  for (const size of [1, 3, 7, 40, 100]) {
+    const r = await client.getAll('/v1/faces', {pageSize: size})
+    eq(`paging at ${size}: rows`, r.data.length, 40)
+    eq(`paging at ${size}: no duplicates`, new Set(r.data.map((f) => f.alias)).size, 40)
+    eq(`paging at ${size}: complete`, r.truncated, false)
+  }
+
+  // A server that never stops claiming more must not spin the loop forever.
+  endless = true
+  const capped = await client.getAll('/v1/faces', {pageSize: 10, maxPages: 4})
+  eq('page cap engages', capped.pages, 4)
+  eq('page cap reports truncation', capped.truncated, true)
+
+  // Nor may a repeated cursor.
+  repeatCursor = true
+  const looped = await client.getAll('/v1/faces', {pageSize: 10})
+  eq('repeated cursor breaks out', looped.truncated, true)
+  eq('repeated cursor stops early', looped.pages < 10, true)
+
+  srv.close()
+}
+
+await paging()
+
+// --- decisions ------------------------------------------------------------------
+eq('option: plain', parseDecisionOption('no=declines to sign'), {name: 'no', definition: 'declines to sign'})
+eq('option: = in definition', parseDecisionOption('yes=signs it = agrees'), {name: 'yes', definition: 'signs it = agrees'})
+eq('option: bare name has no description', parseDecisionOption('yes'), {name: 'yes', definition: null})
+eq('option: empty description is none', parseDecisionOption('yes='), {name: 'yes', definition: null})
+eq('option: empty name', parseDecisionOption('=signs'), undefined)
+eq(
+  'decision lines: choice, most likely first, one decimal',
+  decisionLines({sign: {type: 'choice', choice: 'no', confidence: 0.98, probabilities: {yes: 0, no: 0.995, later: 0.005}}}, 10),
+  ['sign: no, confidence 0.98', '  no      99.5%  ##########', '  later    0.5%', '  yes      0.0%'],
+)
+eq(
+  'decision lines: noul',
+  decisionLines({irked: {type: 'noul', noul: 0.75}}, 4),
+  ['irked: yes 75.0%', '  yes   75.0%  ###', '  no    25.0%  #'],
+)
+eq(
+  'decision lines: score labelled from the legend',
+  decisionLines({firm: {type: 'score', score: 1.99, confidence: 1, legend: {0: 'yields', 1: 'hedges', 2: 'firm'}, probabilities: {0: 0, 1: 0.01, 2: 0.99}}}, 4),
+  ['firm: 1.99 on 0 to 2, confidence 1.00', '  2 firm     99.0%  ####', '  1 hedges    1.0%', '  0 yields    0.0%'],
+)
+eq('decision lines: a non-number is a dash, not NaN%', decisionLines({q: {type: 'choice', choice: 'a', probabilities: {a: 1, b: null}}}, 4), ['q: a', '  a  100.0%  ####', '  b  -'])
+eq('decision lines: an unknown type is shown, not dropped', decisionLines({q: {type: 'new', x: 1}}), ['q', '  {"type":"new","x":1}'])
+
+
+// --- the update hint ---------------------------------------------------------------
+eq('out of date: a route that is gone', looksOutOfDate(404, 'Not Found'), true)
+eq('out of date: a face that is missing is not', looksOutOfDate(404, 'Face x not found'), false)
+eq('out of date: a top-level field the CLI did not send', looksOutOfDate(422, 'body → model: Field required'), true)
+eq('out of date: a fault inside a questions file is not', looksOutOfDate(422, 'body → questions → q → instructions: Field required'), false)
+eq('out of date: an unknown medium is not', looksOutOfDate(422, 'Unknown medium'), false)
+eq('missing fields: none', missingFieldsNote({cause: 'c'}, ['cause']), undefined)
+eq('missing fields: named with the update', missingFieldsNote({}, ['cause']), `The Headwaters API response did not include \`cause\`. ${outOfDateHint()}`)
+eq('update hint names the version', outOfDateHint().includes(`(${JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version})`), true)
+
+// --- the face's reasoning, where each API keeps it ------------------------------
+eq('stream text: thinking is not text', extractStreamDelta({type: 'content_block_delta', index: 0, delta: {thinking: 'r'}}), '')
+
+// --- warm-up: honour Retry-After exactly, and only a 503 that carries one -------
+eq('retry-after: seconds', parseRetryAfter('87'), 87)
+eq('retry-after: padded', parseRetryAfter(' 5 '), 5)
+eq('retry-after: http date is not read', parseRetryAfter('Wed, 21 Oct 2026 07:28:00 GMT'), undefined)
+eq('retry-after: absent', parseRetryAfter(null), undefined)
+eq('wait: 503 with header', warmUpWait(503, 87, 0), 87)
+eq('wait: 503 without header is not a warm-up', warmUpWait(503, undefined, 0), undefined)
+eq('wait: other status never waits', warmUpWait(502, 30, 0), undefined)
+eq('wait: stops at the ceiling', warmUpWait(503, 120, MAX_WARM_UP_WAIT_S - 100), undefined)
+eq('wait: zero is honoured', warmUpWait(503, 0, 0), 0)
+
+// --- an OAuth refusal's sentence, not its JSON -----------------------------------
+eq(
+  'detail: provider JSON string unwrapped',
+  readableDetail('{"detail":"The \'gpt-x\' model is not supported on this plan."}'),
+  "The 'gpt-x' model is not supported on this plan.",
+)
+eq('detail: plain sentence kept', readableDetail('ChatGPT ended its reply.'), 'ChatGPT ended its reply.')
+eq('detail: not a string', readableDetail({a: 1}), undefined)
+
+// --- unlimited is negative, and must never read as used up ---------------------
+eq('limit: -1', readableLimit(-1), 'unlimited')
+eq('limit: 0 is a real zero', readableLimit(0, 'tokens'), '0 tokens')
+eq('limit: null', readableLimit(null), '-')
+const connect = {
+  plan: 'connect',
+  allowances: {
+    upstream_5h: {limit: 640000, used: 14500, remaining: 625500, resets_at: null},
+    upstream_week: {limit: 2500000, used: 14500, remaining: 2485500, resets_at: '2026-10-19T09:44:30.953480'},
+    upstream_month: {limit: 10000000, used: 14500, remaining: 9985500, resets_at: '2026-10-28T09:44:30.953480'},
+    compile_month: {limit: 250000, used: 0, remaining: 250000, resets_at: '2026-10-28T09:44:30.953480'},
+  },
+  rates: {steering_usd_per_million_input_tokens: 0.42, steering_usd_per_call: 0.00042, choices_usd_per_million_input_tokens: 0.42, choices_usd_per_million_output_tokens: 1, compaction_usd_per_million_tokens: 0.75, compile_usd_per_million_source_tokens: 25, model_markup: 0.05},
+}
+const meter = allowanceLines(connect)
+eq('allowance: heading', meter[0], 'Connect allowances (tokens):')
+eq('allowance: 5h rolls', meter[1], '  choices and steering, rolling 5 hours  14.5k of 640k (2%)   rolls')
+eq('allowance: week resets', meter[2], '  choices and steering, this week        14.5k of 2.5M (<1%)  resets 2026-10-19 09:44 UTC')
+eq('allowance: compile', meter[4], '  compile, this month                    0 of 250k (0%)       resets 2026-10-28 09:44 UTC')
+eq('allowance: past it names the rates', /\$0\.42 per million steering tokens plus \$0\.00042 a call, \$0\.42 and \$1 per million choices input and output tokens, on maestro-1 \(10 times on maestro-1-flash\), and \$25 per million compile/.test(meter[5]), true)
+eq('allowance: free has none', allowanceLines({plan: 'free', allowances: null}), [])
+eq('allowance: a zero limit is none, not 0 of 0', allowanceLines({plan: 'pro', allowances: {compile_month: {limit: 0, used: 0, resets_at: '2026-11-01T00:00:00'}}})[1], '  compile, this month  none, paid per token')
+eq('allowance: a zero unknown key is none too', allowanceLines({plan: 'pro', allowances: {decide_day: {limit: 0, used: 0}}})[1].includes('none, paid per token'), true)
+eq('allowance: names the rush rate', /\$25 per million compile tokens \(\$30 for a rush\)\./.test(allowanceLines({...connect, rates: {...connect.rates, compile_rush_usd_per_million_source_tokens: 30}})[5]), true)
+const team = allowanceLines({plan: 'team', allowances: {upstream_month: {limit: -1, used: 900, remaining: null, resets_at: '2026-11-01T00:00:00'}}})
+eq('allowance: team is unlimited, never used up', team, ['Team allowances (tokens):', '  choices and steering, this month  900 used, unlimited'])
+eq('allowance: an unknown key still shows', allowanceLines({plan: 'pro', allowances: {decide_day: {limit: 10, used: 2}}}).some((l) => l.includes('decide_day')), true)
+eq('tokens', [tokens(400000), tokens(1600000), tokens(6300000), tokens(14500), tokens(651), tokens(null)], ['400k', '1.6M', '6.3M', '14.5k', '651', '-'])
+eq('card line', cardLine({id: 'pm_1', brand: 'visa', last4: '4242', exp_month: 8, exp_year: 2029, is_default: true}), 'visa ending 4242, expires 08/2029  pm_1  (default)')
+eq('card line, not default', cardLine({id: 'pm_2', brand: 'mastercard', last4: '4444'}), 'mastercard ending 4444  pm_2')
+
+// --- refusals that hinge on api_fallback ----------------------------------------
+eq('429 allowance gets guidance', typeof refusalGuidance(429, undefined, 'Connect allowance of $20 used'), 'string')
+eq('429 allowance guidance names the setting', refusalGuidance(429, undefined, 'Your Connect plan has used its weekly allowance (1,600,000 of 1,600,000 tokens).'), 'To continue on credits until it resets: hw account:preferences api_fallback true')
+eq('402 says top up', refusalGuidance(402, undefined, 'no credit'), 'Add credit with: hw billing:topup --amount <usd>')
+eq('429 rate limit is not told about api_fallback', /api_fallback/.test(refusalGuidance(429, undefined, 'Rate limit exceeded') ?? ''), false)
+eq('502 oauth_incomplete gets guidance', typeof refusalGuidance(502, 'oauth_incomplete', 'stopped'), 'string')
+eq('502 other does not', refusalGuidance(502, undefined, 'upstream failed'), undefined)
+
+// --- report whitelist: new keys go out, but only their documented insides -------
+const job = publicJob({
+  job_id: 'j',
+  report: {
+    auto: {medium: 'email', multiple: 3, words: 50322, threshold: 15000, trigger: 'upload', oauth_only: true, face_id: 'f', internal_x: 1},
+    thin_corpus: {essay: {words: 4200, threshold: 10000, internal_y: 2}},
+    skipped_third_person: ['d1', {id: 'd2', label: 'Bio', internal_z: 3}],
+    some_internal_key: 4,
+  },
+})
+eq('whitelist: auto insides', Object.keys(job.report.auto).sort(), ['medium', 'multiple', 'oauth_only', 'threshold', 'trigger', 'words'])
+eq('whitelist: thin_corpus insides', job.report.thin_corpus, {essay: {words: 4200, threshold: 10000}})
+eq('whitelist: skipped insides', job.report.skipped_third_person, ['d1', {id: 'd2', label: 'Bio'}])
+eq('whitelist: unknown top-level key stays behind', 'some_internal_key' in job.report, false)
+
+eq(
+  'auto trigger phrase',
+  autoTrigger(job),
+  'automatic build after an upload (50322 words, past 3x the 15000-word threshold)',
+)
+eq('manual job has no trigger', autoTrigger({report: {}}), undefined)
+eq('warnings: skipped and thin', reportWarnings(job).length, 3)
+eq('warnings: empty report is quiet', reportWarnings({report: {thin_corpus: {}, skipped_third_person: []}}), [])
+eq('failure: CONNECT_REQUIRED names --allow-paid', /--allow-paid/.test(jobFailureMessage('CONNECT_REQUIRED: no free route')), true)
+eq('failure: nothing linked is not "expired"', [/No ChatGPT account is linked/.test(jobFailureMessage('CHATGPT_AUTH: sign-in expired', false)), /expired\. Reconnect/.test(jobFailureMessage('CHATGPT_AUTH: x', false))], [true, false])
+eq('failure: a linked account is reconnected', /most likely expired/.test(jobFailureMessage('CHATGPT_AUTH: x', true)), true)
+eq('failure: unknown link says how to check', /auth:connections/.test(jobFailureMessage('CHATGPT_AUTH: x')), true)
+eq('failure: MODEL_NOT_FREE points at the default route', /Leave out --model/.test(jobFailureMessage('MODEL_NOT_FREE: x')), true)
+eq('failure: a referenced fault is neutral and keeps the reference', [/failed internally/, /reference 0a1b2c3d4e5f/].map((re) => re.test(jobFailureMessage('Could not build. Reference 0a1b2c3d4e5f.'))), [true, true])
+eq('failure: a 500 never prints the server text', /secret detail/.test(jobFailureMessage('secret detail', undefined, undefined, 500)), false)
+eq('failure: an internal code is a fault', /failed internally/.test(jobFailureMessage('anything', undefined, 'internal_error')), true)
+eq('failure: a deliberate message is not a fault', jobFailureMessage('Not enough to build from.'), 'Not enough to build from.')
+eq('served by: the link', servedBy({served_by: {route: 'chatgpt', model: 'gpt-5.6-terra', fell_back: false}}), 'your linked ChatGPT account (gpt-5.6-terra)')
+eq('served by: fell back', servedBy({served_by: {route: 'faces', model: 'mercury-3', fell_back: true}}), 'Headwaters (mercury-3), after the ChatGPT link failed, the rest charged to credits')
+eq('served by: off the link is charged', servedBy({served_by: {route: 'faces', model: 'mercury-3', fell_back: false}}), 'Headwaters (mercury-3), charged to credits')
+eq('served by: the link is never called charged', /charged/.test(servedBy({served_by: {route: 'chatgpt', model: 'm', fell_back: false}})), false)
+eq('failure: an automatic build short of credit says top up', [/billing:topup/, /tried again later/].map((re) => re.test(jobFailureMessage('Not enough credit.', undefined, 'insufficient_credit_for_style_build'))), [true, true])
+{
+  const msg = styleCreditRefusal({estimated_usd: 3.4, balance_usd: 1.25})
+  eq('style 402: estimate and balance', [/up to \$3\.40/.test(msg), /balance is \$1\.25/.test(msg)], [true, true])
+  eq('style 402: suggests the shortfall', /billing:topup --amount 3\b/.test(msg), true)
+  eq('style 402: nothing charged', /nothing was charged/.test(msg), true)
+  eq('style 402: without figures', /--amount <usd>/.test(styleCreditRefusal(undefined)), true)
+}
+// Similarity: never padded, so a score rounded to one place reads as one.
+eq('similarity: rounded stays one place', similarityText(0.8), '0.8')
+eq('similarity: negative', similarityText(-0.3), '-0.3')
+eq('similarity: exact is cut to four places', similarityText(0.834567891), '0.8346')
+eq('similarity: missing', similarityText(null), '-')
+eq('served by: absent', servedBy({}), undefined)
+eq('served_by is public, its inner keys whitelisted', publicJob({report: {served_by: {route: 'faces', model: 'm', fell_back: false, extra: 1}}}).report.served_by, {route: 'faces', model: 'm', fell_back: false})
+
+
+// --- streaming: keep-alives skipped, late refusals thrown ----------------------
+eq('chat late refusal', (() => { const e = streamErrorOf('{"error": {"message": "reasoning failed. Nothing was charged.", "code": 503}}'); return [e.statusCode, e.message] })(), [503, 'reasoning failed. Nothing was charged.'])
+eq('responses late refusal', (() => { const e = streamErrorOf('{"type": "error", "code": "503", "message": "m"}'); return [e.statusCode, e.message] })(), [503, 'm'])
+eq('messages late refusal', (() => { const e = streamErrorOf('{"type": "error", "error": {"type": "overloaded_error", "message": "m"}}'); return [e.statusCode, e.message] })(), [503, 'm'])
+eq('messages invalid request is 400', streamErrorOf('{"type": "error", "error": {"type": "invalid_request_error", "message": "m"}}').statusCode, 400)
+eq('an unnamed code is 503', streamErrorOf('{"error": {"message": "m"}}').statusCode, 503)
+eq('a chunk that says error is not one', streamErrorOf('{"choices": [{"delta": {"content": "an error"}}]}'), undefined)
+eq('a null error is not one', streamErrorOf('{"error": null, "choices": []}'), undefined)
+eq('a text delta that says error is not one', streamErrorOf('{"type": "response.output_text.delta", "delta": "error"}'), undefined)
+eq('[DONE] is not one', streamErrorOf('[DONE]'), undefined)
+eq('chat stream: a named code is kept', streamErrorOf('{"error": {"message": "m", "type": "faces_error", "code": "oauth_rejected"}}')?.errorCode, 'oauth_rejected')
+eq('chat stream: a numeric code is the status', streamErrorOf('{"error": {"message": "m", "type": "faces_error", "code": 409}}')?.statusCode, 409)
+eq('responses stream: a named code is kept', streamErrorOf('{"type": "error", "code": "oauth_rejected", "message": "m", "param": null}')?.errorCode, 'oauth_rejected')
+eq('messages stream: a named code is kept', streamErrorOf('{"type": "error", "error": {"type": "api_error", "message": "m", "code": "oauth_rejected"}}')?.errorCode, 'oauth_rejected')
+eq('chat stream: status beside a named code', streamErrorOf('{"error": {"message": "m", "type": "faces_error", "code": "oauth_rejected", "status": 409}}')?.statusCode, 409)
+eq('responses stream: status beside a named code', streamErrorOf('{"type": "error", "code": "oauth_rejected", "status": 409, "message": "m", "param": null}')?.statusCode, 409)
+eq('messages stream: status in error', streamErrorOf('{"type": "error", "error": {"type": "api_error", "message": "m", "code": "oauth_rejected", "status": 409}}')?.statusCode, 409)
+eq('chat stream: retryable false is kept', streamErrorOf('{"error": {"message": "m", "type": "provider_error", "code": 503, "status": 503, "retryable": false}}')?.retryable, false)
+eq('held body: retryable false is kept', heldChatError({detail: 'm', error: {message: 'm', type: 'provider_error', status: 503, retryable: false}})?.retryable, false)
+eq('details carry retryable', new HwAPIError(503, 'm', {details: {type: 'provider_error', retryable: false}}).retryable, false)
+eq('503 not retryable: no "try again" hint', faceRefusalHint(new HwAPIError(503, 'This model is not available right now. Try another model.', {retryable: false}), '@alice:maestro-1/x'), undefined)
+eq('503 retryable: try again', faceRefusalHint(new HwAPIError(503, 'm', {retryable: true}), '@alice:maestro-1/x'), 'Try again.')
+
+async function streaming() {
+  let mode = ''
+  let hits = 0
+  const srv = http.createServer((req, res) => {
+    hits++
+    let body = ''
+    req.on('data', (c) => (body += c))
+    req.on('end', () => {
+      const payload = JSON.parse(body)
+      if (mode === 'rename' && payload.max_tokens !== undefined) {
+        res.writeHead(400, {'Content-Type': 'application/json'})
+        res.end(JSON.stringify({detail: "Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead."}))
+        return
+      }
+      res.writeHead(200, {'Content-Type': 'text/event-stream', 'X-Faces-Provider': 'openai'})
+      res.write(': keep-alive\n\n')
+      res.write(': keep-alive\r\n\r\n')
+      if (mode === 'late') {
+        res.write('data: {"error": {"message": "the reasoning failed. Nothing was charged.", "code": 503}}\n\n')
+        res.end('data: [DONE]\n\n')
+        return
+      }
+      res.write('data: {"choices": [{"delta": {"cause": "hm"}}]}\n\n')
+      res.write('data: {"choices": [{"delta": {"content": "hi"}}]}\n\n')
+      res.end('data: [DONE]\n\n')
+    })
+  })
+  await new Promise((r) => srv.listen(0, r))
+  const client = new HwClient(`http://127.0.0.1:${srv.address().port}`, undefined, 'k')
+  try {
+    mode = 'ok'
+    let seen
+    const lines = []
+    for await (const l of client.stream('/v1/chat/completions', {}, {onHeaders: (h) => (seen = h)})) lines.push(l)
+    eq('keep-alives skipped', lines, ['data: {"choices": [{"delta": {"cause": "hm"}}]}', 'data: {"choices": [{"delta": {"content": "hi"}}]}', 'data: [DONE]'])
+    eq('headers seen', seen['x-faces-provider'], 'openai')
+
+    mode = 'late'
+    let caught
+    try {
+      for await (const l of client.stream('/v1/chat/completions', {})) void l
+    } catch (e) {
+      caught = e
+    }
+    eq('late refusal thrown', [caught instanceof HwAPIError, caught?.statusCode, caught?.message], [true, 503, 'the reasoning failed. Nothing was charged.'])
+
+    mode = 'rename'
+    hits = 0
+    const payload = {max_tokens: 50}
+    const got = []
+    for await (const l of streamChat(client, '/v1/chat/completions', payload)) got.push(l)
+    eq('max_tokens renamed and asked again', [hits, payload, got.length], [2, {max_completion_tokens: 50}, 3])
+  } finally {
+    srv.close()
+  }
+}
+await streaming()
+
+// --- warm-up: one retry after Retry-After, nothing else retried ----------------
+async function warmUp() {
+  const refusal = (status, retryAfter) => new HwAPIError(status, 'm', {retryAfter})
+  let calls = 0
+  const waits = []
+  const ok = await retryOnceOnWarmUp(async () => { if (calls++ === 0) throw refusal(503, 0); return 'done' }, (s) => waits.push(s))
+  eq('warm-up retried once', [ok, calls, waits], ['done', 2, [0]])
+
+  calls = 0
+  let err
+  try { await retryOnceOnWarmUp(async () => { calls++; throw refusal(503, 0) }) } catch (e) { err = e }
+  eq('a second warm-up is not retried', [calls, err?.statusCode], [2, 503])
+
+  for (const [label, e] of [['503 without Retry-After', refusal(503)], ['409', refusal(409)], ['past the ceiling', refusal(503, MAX_WARM_UP_WAIT_S + 1)]]) {
+    calls = 0
+    try { await retryOnceOnWarmUp(async () => { calls++; throw e }) } catch { /* expected */ }
+    eq(`${label} is not retried`, calls, 1)
+  }
+}
+await warmUp()
+
+eq('409 hint: recompile', /hw face:sources alice/.test(faceRefusalHint(new HwAPIError(409, 'm'), '@alice:maestro-1/gpt-5.4')), true)
+eq('409 hint: someone else\'s face', faceRefusalHint(new HwAPIError(409, 'm'), '@head~socrates:maestro-1/x'), 'head:socrates needs recompiling by its owner before it can answer.')
+eq('faceStyles reads styles', faceStyles({styles: ['email', 'essay']}), ['email', 'essay'])
+eq('faceStyles: none', [faceStyles({styles: []}), faceStyles({}), faceStyles({styles: null})], [[], [], []])
+eq('503 hint: try again', faceRefusalHint(new HwAPIError(503, 'm'), '@alice:maestro-1/x'), 'Try again.')
+eq('503 hint names the wait', /in 30s/.test(faceRefusalHint(new HwAPIError(503, 'm', {retryAfter: 30}), '@alice:maestro-1/x')), true)
+eq('503 hint: no warm-up', /warm/i.test(faceRefusalHint(new HwAPIError(503, 'm', {retryAfter: 30}), '@alice:maestro-1/x') ?? ''), false)
+eq('504 hint: ask again', faceRefusalHint(new HwAPIError(504, 'm'), '@alice:maestro-1/x'), 'The face did not finish within 300 seconds. Ask again.')
+eq('409 nothing compiled: a first source', /^Give it a first source: hw face:compile testo --file <file>\./.test(faceRefusalHint(new HwAPIError(409, 'this face has nothing compiled'), '@testo:maestro-1/x') ?? ''), true)
+eq('409 nothing compiled on a formula: each face', faceRefusalHint(new HwAPIError(409, 'this face has nothing compiled'), '(@a | @b):maestro-1/x'), 'Every face in (@a | @b) needs something compiled: hw face:compile <alias> --file <file> for each.')
+eq('409 recompile on a formula: no face:sources of a formula', /face:sources/.test(faceRefusalHint(new HwAPIError(409, 'compiled before the current version'), '(@a & @b):maestro-1/x') ?? ''), false)
+eq('422 empty_composite: says the result is empty', /Nothing is left once the formula is applied/.test(refusalGuidance(422, 'empty_composite', 'the intersection between these two faces is null') ?? ''), true)
+eq('422 no hint', faceRefusalHint(new HwAPIError(422, 'm'), '@alice:maestro-1/x'), undefined)
+
+
+// --- a cause the caller writes ------------------------------------------------
+
+
+// --- a chat aimed at a decision model ------------------------------------------
+eq('decision model refused for chat', decisionModelError('jev-latest'), 'jev-latest is a decision model, not a chat model; use `hw maestro:decide --face @<face> --decoder jev-latest`')
+eq('decision model match ignores case', /decision model/.test(decisionModelError('Clef-Flash') || ''), true)
+eq('chat model passes', decisionModelError('gpt-5.4'), undefined)
+eq('no model passes', decisionModelError(undefined), undefined)
+
+// --- the per-minute rate limit: one retry after Retry-After, never a loop -----
+const RL = 'Rate limit: 60 requests per minute on the connect plan. Retry in 15s.'
+eq('rate limit: waits the header', rateLimitWait(15, JSON.stringify({detail: RL})), 15)
+eq('rate limit: no header, no retry', rateLimitWait(undefined, JSON.stringify({detail: RL})), undefined)
+eq('rate limit: past a minute, no retry', rateLimitWait(3600, JSON.stringify({detail: RL})), undefined)
+eq('allowance 429 is not retried', rateLimitWait(10, JSON.stringify({detail: 'Your 5-hour allowance is used.'})), undefined)
+eq('rate limit guidance', /api\.faces\.sh\/v1\/rates/.test(refusalGuidance(429, undefined, RL) ?? ''), true)
+eq('allowance guidance unchanged', /api_fallback true/.test(refusalGuidance(429, undefined, 'allowance used') ?? ''), true)
+eq('free oauth-only guidance', /drop --oauth-only/.test(refusalGuidance(422, 'oauth_only_unavailable', 'm') ?? ''), true)
+
+async function rateLimited() {
+  let replies = []
+  let calls = 0
+  const srv = http.createServer((req, res) => {
+    calls++
+    const [status, headers, body] = replies.length > 1 ? replies.shift() : replies[0]
+    res.writeHead(status, {'content-type': 'application/json', ...headers})
+    res.end(typeof body === 'string' ? body : JSON.stringify(body))
+  })
+  await new Promise((r) => srv.listen(0, r))
+  const client = new HwClient(`http://127.0.0.1:${srv.address().port}`, undefined, 'sk-check')
+  const err = async (fn) => {
+    try {
+      await fn()
+      return undefined
+    } catch (e) {
+      return e
+    }
+  }
+  try {
+    const limited = [429, {'retry-after': '0'}, {detail: RL}]
+    replies = [limited, [200, {}, {ok: true}]]
+    calls = 0
+    eq('429 then 200: retried once', await client.post('/v1/x', {body: {}}), {ok: true})
+    eq('429 then 200: two calls', calls, 2)
+
+    replies = [limited]
+    calls = 0
+    const twice = await err(() => client.post('/v1/x', {body: {}}))
+    eq('429 twice: refused with the message', twice?.statusCode, 429)
+    eq('429 twice: one retry only', calls, 2)
+    eq('429 twice: message kept', twice?.message.startsWith(RL), true)
+
+    replies = [[429, {}, {detail: RL}]]
+    calls = 0
+    await err(() => client.get('/v1/x'))
+    eq('429 without Retry-After: no retry', calls, 1)
+
+    replies = [[429, {'retry-after': '0'}, {detail: 'Your monthly allowance is used.'}]]
+    calls = 0
+    await err(() => client.get('/v1/x'))
+    eq('allowance 429: no retry', calls, 1)
+
+    // A refusal with its code beside a plain sentence keeps the code.
+    replies = [[422, {}, {detail: 'OAuth-only is not available on Free.', error_code: 'oauth_only_unavailable'}]]
+    const free = await err(() => client.post('/v1/chat/completions', {body: {}}))
+    eq('free oauth-only: code kept', free?.errorCode, 'oauth_only_unavailable')
+    eq('free oauth-only: sentence first', free?.message.startsWith('OAuth-only is not available on Free.'), true)
+
+    // A held decision: 200 and spaces first, then the JSON.
+    replies = [[200, {'x-faces-held': '1'}, '      \n   ' + JSON.stringify({answers: {a: {yes: 0.7}}})]]
+    eq('held body parses past the spaces', await client.post('/v1/systemone', {body: {}}), {answers: {a: {yes: 0.7}}})
+  } finally {
+    srv.close()
+  }
+}
+await rateLimited()
+
+// --- a held decision that failed arrives as a 200 carrying the refusal ---------
+const heldFail = heldDecisionError({detail: 'The decision model timed out.', error: {type: 'timeout', status: 504}})
+eq('held failure: status', heldFail?.statusCode, 504)
+eq('held failure: message', heldFail?.message, 'The decision model timed out.')
+eq('held failure: code', heldFail?.errorCode, 'timeout')
+eq('held failure: no status is a 502', heldDecisionError({error: {message: 'boom'}})?.statusCode, 502)
+eq('held failure: message from error', heldDecisionError({error: {message: 'boom'}})?.message, 'boom')
+eq('an answer is not a failure', heldDecisionError({answers: {a: {}}, cause: 'x'}), undefined)
+eq('a cause alone is not a failure', heldDecisionError({cause: 'x'}), undefined)
+eq('no error is not a failure', heldDecisionError({}), undefined)
+
+// --- polling a compile on status, against a scripted server -------------------
+async function polling() {
+  let script = []
+  let paths = []
+  const srv = http.createServer((req, res) => {
+    paths.push(req.url)
+    const body = script.length > 1 ? script.shift() : script[0]
+    res.writeHead(200, {'content-type': 'application/json'})
+    res.end(JSON.stringify(body))
+  })
+  await new Promise((r) => srv.listen(0, r))
+  const client = new HwClient(`http://127.0.0.1:${srv.address().port}`, undefined, 'sk-check')
+  const run = async (steps, opts = {}) => {
+    script = steps
+    paths = []
+    const seen = []
+    try {
+      const out = await pollCompileProgress(client, 'd1', {intervalMs: 1, timeoutMs: 2000, onProgress: (p) => seen.push(p.status), ...opts})
+      return {out, seen}
+    } catch (err) {
+      return {error: err.message, seen}
+    }
+  }
+  try {
+    const ok = await run([
+      {status: 'queued', progress: 0},
+      {status: 'queued', progress: 0},
+      {status: 'compiling', progress: 0.5},
+      {status: 'compiled', progress: 1, content: 'x'},
+    ])
+    eq('poll: queued once, then compiling, then done', ok.seen, ['queued', 'compiling', 'compiled'])
+    eq('poll: re-reads the full source at the end', paths.at(-1), '/v1/compile/documents/d1')
+    eq('poll: ticks use status_only', paths[0], '/v1/compile/documents/d1?status_only=true')
+    const failedRun = await run([{status: 'failed', progress: 0.3, finishing: false, stall_reason: 'model refused'}])
+    eq('poll: failed ends it with the reason', /model refused/.test(failedRun.error ?? ''), true)
+    const retried = await run([
+      {status: 'failed', progress: 0.3, finishing: true},
+      {status: 'compiled', progress: 1},
+    ], {fullOnFinish: false})
+    eq('poll: a failure still being retried is waited out', retried.out?.status, 'compiled')
+    const paused = await run([{status: 'paused', progress: 0.4}])
+    eq('poll: paused ends it', /paused/.test(paused.error ?? ''), true)
+    const newer = await run([{status: 'warming_up', progress: 0.1}, {status: 'compiled', progress: 1}], {fullOnFinish: false})
+    eq('poll: an unknown status keeps waiting', newer.seen[0], 'compiling')
+    const later = new Date(Date.now() + 60_000).toISOString()
+    const waits = await run([
+      ...Array.from({length: 40}, () => ({status: 'queued', progress: 0, starts_at: later})),
+      {status: 'compiled', progress: 1},
+    ], {timeoutMs: 1, startsAt: later, fullOnFinish: false})
+    eq('poll: a scheduled start is waited for, not timed out', waits.out?.status, 'compiled')
+    const old = await run([{prepare_status: 'synced', parts_total: 2, parts_completed: 2}], {timeoutMs: 30})
+    eq('poll: the old fields are not read', /timed out/.test(old.error ?? ''), true)
+
+    script = [{status: 'compiling', progress: 0.2}, {status: 'paused', progress: 0.2}]
+    eq('pause: lands', await pollUntilPaused(client, 'd1', {intervalMs: 1, timeoutMs: 2000}), 'paused')
+    script = [{status: 'compiled', progress: 1}]
+    eq('pause: finished first', await pollUntilPaused(client, 'd1', {intervalMs: 1, timeoutMs: 2000}), 'compiled')
+  } finally {
+    srv.close()
+  }
+}
+await polling()
+
+// --- ids from input stay one path segment ------------------------------------
+// A raw id could climb out of its route: `../../faces/x` turned a document
+// delete into a face delete.
+eq('seg: a slash stays inside the segment', seg('../../faces/x'), '..%2F..%2Ffaces%2Fx')
+eq('seg: owner:alias', seg('head:socrates'), 'head%3Asocrates')
+eq('seg: query and fragment characters', seg('a?b#c&d'), 'a%3Fb%23c%26d')
+for (const bad of ['', '.', '..']) {
+  let threw = false
+  try { seg(bad) } catch { threw = true }
+  eq(`seg: refuses ${JSON.stringify(bad)}`, threw, true)
+}
+
+async function pathGuard() {
+  const paths = []
+  const srv = http.createServer((req, res) => {
+    paths.push(req.url)
+    res.writeHead(200, {'content-type': 'application/json'})
+    res.end('{}')
+  })
+  await new Promise((r) => srv.listen(0, r))
+  const client = new HwClient(`http://127.0.0.1:${srv.address().port}`, undefined, 'sk-check')
+  const refused = async (p) => {
+    try { await client.delete(p); return false } catch (err) { return /would be rewritten/.test(err.message) }
+  }
+  try {
+    await client.delete(`/v1/compile/documents/${seg('../../faces/x')}`)
+    eq('guard: an encoded id reaches its own route', paths.at(-1), '/v1/compile/documents/..%2F..%2Ffaces%2Fx')
+    eq('guard: a raw dot segment is refused', await refused('/v1/compile/documents/../../faces/x'), true)
+    eq('guard: an encoded dot segment is refused', await refused('/v1/compile/documents/%2e%2e/%2E%2E/faces/x'), true)
+    eq('guard: a single dot is refused', await refused('/v1/faces/./x'), true)
+    eq('guard: nothing refused reached the server', paths.length, 1)
+    await client.get('/v1/faces?q=../x')
+    eq('guard: dots in a query are left alone', paths.at(-1), '/v1/faces?q=../x')
+  } finally {
+    srv.close()
+  }
+}
+await pathGuard()
+
+// Catalog folders are deleted recursively, so a name must stay inside its parent.
+{
+  const refuses = (name) => { try { childPath('/base/catalog', name); return false } catch { return true } }
+  eq('childPath: a plain name', childPath('/base/catalog', 'alice'), '/base/catalog/alice')
+  for (const bad of ['', '.', '..', '../x', 'a/b', '../../.ssh', '/etc']) eq(`childPath: refuses ${JSON.stringify(bad)}`, refuses(bad), true)
+}
+
+
+// --- the out-of-date hint only claims an update helps when one exists ---------
+eq('versions: equal', compareVersions('1.20.1', '1.20.1'), 0)
+eq('versions: patch behind', compareVersions('1.20.0', '1.20.1'), -1)
+eq('versions: numeric, not text', compareVersions('1.10.0', '1.9.9'), 1)
+eq('hint: on the latest it is a bug', /looks like a hw CLI bug/.test(outOfDateHint(CLI_VERSION)), true)
+eq('hint: on the latest it never says update', /npm install/.test(outOfDateHint(CLI_VERSION)), false)
+eq('hint: behind names the latest', outOfDateHint('99.0.0').includes('the latest is 99.0.0'), true)
+eq('hint: unknown keeps "may be"', /may be out of date/.test(outOfDateHint(null)), true)
+
+// --- a typed budget is a dollar amount or nothing ----------------------------
+{
+  const fail = (m) => { throw new Error(m) }
+  const ok = (raw) => { try { return parseBudget(raw, fail) } catch { return 'refused' } }
+  eq('budget: whole dollars', ok('5'), 5)
+  eq('budget: cents', ok('0.50'), 0.5)
+  eq('budget: a leading $', ok('$2'), 2)
+  for (const bad of ['1abc', '1e6', 'abc', 'NaN', 'Infinity', '-1', '1.005', '']) eq(`budget: refuses ${JSON.stringify(bad)}`, ok(bad), 'refused')
+}
+
+// --- key limits go out under the API's field names ---------------------------
+async function keyFields() {
+  const bodies = []
+  const srv = http.createServer((req, res) => {
+    let b = ''
+    req.on('data', (c) => { b += c })
+    req.on('end', () => {
+      bodies.push(JSON.parse(b || '{}'))
+      res.writeHead(200, {'content-type': 'application/json'})
+      res.end(JSON.stringify({id: 'k1', name: 'n', key: 'sk-x'}))
+    })
+  })
+  await new Promise((r) => srv.listen(0, r))
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'faces-check-'))
+  const env = {...process.env, HOME: home, HW_BASE_URL: `http://127.0.0.1:${srv.address().port}`, HW_TOKEN: 'jwt-check'}
+  const run = (args) => new Promise((r) => execFile(process.execPath, ['bin/run.js', ...args], {env}, () => r()))
+  try {
+    await run(['keys:create', '--name', 'n', '--no-save', '--expires-days', '7', '--budget', '2.5', '--face', 'alice', '--model', 'gpt-5-mini', '--json'])
+    eq('keys:create sends the API field names', bodies[0], {name: 'n', expires_in_days: 7, budget_usd: 2.5, allowed_face_ids: ['alice'], allowed_llm_models: ['gpt-5-mini']})
+    await run(['keys:update', 'k1', '--budget', '1', '--json'])
+    eq('keys:update sends budget_usd', bodies[1], {budget_usd: 1})
+  } finally {
+    srv.close()
+    fs.rmSync(home, {recursive: true, force: true})
+  }
+}
+await keyFields()
+
+// --- commands the API takes only from a signed-in session send the login -----
+// With an API key saved, the CLI sends the key by default. The API refuses keys
+// on sharing, publishing, deleting a face, linked accounts and billing changes,
+// so those commands must send the saved login instead.
+async function loginOnlyCommands() {
+  const seen = []
+  const srv = http.createServer((req, res) => {
+    req.on('data', () => {})
+    req.on('end', () => {
+      seen.push({auth: req.headers.authorization, call: `${req.method} ${req.url.split('?')[0]}`})
+      const send = (body) => { res.writeHead(200, {'content-type': 'application/json'}); res.end(JSON.stringify(body)) }
+      if (req.method === 'GET' && req.url.startsWith('/v1/faces/alice')) return send({id: 'f1', username: 'alice', shared_with: ['bob']})
+      if (req.method === 'GET' && req.url === '/v1/billing/subscription') return send({plan: 'pro', status: 'active', cancel_at_period_end: true})
+      if (req.url === '/v1/oauth') return send([])
+      send({})
+    })
+  })
+  await new Promise((r) => srv.listen(0, r))
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'faces-check-'))
+  const env = {...process.env, HOME: home, HW_BASE_URL: `http://127.0.0.1:${srv.address().port}`, HW_TOKEN: 'jwt-check', HW_API_KEY: 'sk-faces-check'}
+  const run = (args) => new Promise((r) => execFile(process.execPath, ['bin/run.js', ...args], {env}, () => r()))
+  try {
+    for (const args of [
+      ['face:publish', 'alice', '--yes', '--json'], ['face:unpublish', 'alice', '--json'],
+      ['face:share', 'alice', '--add', 'carol', '--yes', '--json'], ['face:unshare', 'alice', '--from', 'bob', '--yes', '--json'],
+      ['face:delete', 'alice', '--yes', '--json'], ['auth:connections', '--json'],
+      ['billing:topup', '--amount', '10', '--yes', '--json'], ['billing:card:remove', 'pm_1', '--yes', '--json'],
+      ['billing:card-setup', '--json'], ['billing:card:default', 'pm_1', '--json'],
+      ['billing:subscription:activate', '--json'],
+    ]) await run(args)
+    const loginOnly = seen.filter((s) => s.call !== 'GET /auth/me' && (s.call.startsWith('GET /v1/oauth') || !s.call.startsWith('GET ')))
+    eq('login-only commands: each one reached the API', [...new Set(loginOnly.map((s) => s.call))].sort(), [
+      'DELETE /v1/billing/payment-methods/pm_1', 'DELETE /v1/faces/alice', 'GET /v1/oauth',
+      'PATCH /v1/faces/alice/publish', 'PATCH /v1/faces/alice/share',
+      'POST /v1/billing/card-setup', 'POST /v1/billing/payment-methods/pm_1/default',
+      'POST /v1/billing/subscription/reactivate', 'POST /v1/billing/topup',
+    ])
+    eq('login-only commands: none sent the API key', loginOnly.filter((s) => s.auth !== 'Bearer jwt-check').map((s) => s.call), [])
+  } finally {
+    srv.close()
+    fs.rmSync(home, {recursive: true, force: true})
+  }
+}
+await loginOnlyCommands()
+
+// --- refusals and confirmations, through the real commands -------------------
+async function errorsAndConfirmations() {
+  const seen = []
+  const makeBodies = []
+  const styleBodies = []
+  const srv = http.createServer((req, res) => {
+    seen.push(`${req.method} ${req.url}`)
+    const send = (status, body) => { res.writeHead(status, {'content-type': 'application/json'}); res.end(JSON.stringify(body)) }
+    if (req.url.startsWith('/v1/faces/ghost')) return send(404, {detail: "Face 'ghost' not found"})
+    if (req.url.includes('/started/make')) return send(409, {detail: {message: "This document's compile has already started, so it can no longer be rushed.", error_code: 'compile_already_started'}})
+    if (req.url.startsWith('/v1/compile/documents?alias=')) return send(200, [{document_id: 'd1', label: 'Essay', medium: 'essay', kind: 'essay', synced: true}])
+    if (req.url.startsWith('/v1/compile/threads?alias=')) return send(200, [])
+    if (req.url === '/v1/style/builds' && req.method === 'POST') {
+      let body = ''
+      req.on('data', (c) => { body += c })
+      req.on('end', () => {
+        styleBodies.push(JSON.parse(body || '{}'))
+        if (JSON.parse(body || '{}').oauth_only) return send(409, {detail: {error_code: 'chatgpt_not_linked', message: 'oauth_only builds only through a linked ChatGPT account.'}})
+        send(402, {detail: {message: 'This style build is paid from credit.', error_code: 'insufficient_credit_for_style_build', estimated_usd: 3.4, balance_usd: 1.25}})
+      })
+      return
+    }
+    if (req.url.includes('/rushy/make')) return send(402, {detail: {message: 'The rush adds $1.25, paid from credit.', error_code: 'insufficient_credit_for_rush', rush_premium_usd: 1.25}})
+    if (req.url.includes('/sched/make')) {
+      let body = ''
+      req.on('data', (c) => { body += c })
+      req.on('end', () => {
+        makeBodies.push(body)
+        send(202, {document_id: 'sched', status: 'queued', progress: 0, starts_at: new Date(Date.now() + 40 * 60_000).toISOString(), rush: false})
+      })
+      return
+    }
+    if (req.url.includes('/make')) return send(409, {detail: 'Already compiled. Nothing was charged.', error_code: 'already_compiled'})
+    if (req.url.startsWith('/v1/billing/subscription') && req.method === 'GET') return send(200, {plan: 'pro', status: 'active'})
+    send(200, {})
+  })
+  await new Promise((r) => srv.listen(0, r))
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'faces-check-'))
+  const base = {...process.env, HOME: home, HW_BASE_URL: `http://127.0.0.1:${srv.address().port}`}
+  const run = (args, env = {...base, HW_API_KEY: 'sk-check'}) => new Promise((r) => {
+    const child = execFile(process.execPath, ['bin/run.js', ...args], {env}, (err, stdout, stderr) => r({code: err ? err.code : 0, stdout, stderr}))
+    child.stdin.end()
+  })
+  const json = (out) => { try { return JSON.parse(out.stdout) } catch { return undefined } }
+  try {
+    seen.length = 0
+    let r = await run(['face:delete', 'alice', '--json'])
+    eq('confirm: --json without --yes is refused', [r.code, /Re-run with --yes/.test(json(r)?.error?.message ?? '')], [2, true])
+    r = await run(['face:delete', 'alice'])
+    eq('confirm: no terminal is refused, not a hang', [r.code, /Re-run with --yes/.test(r.stderr)], [2, true])
+    r = await run(['billing:subscription:plan', 'connect', '--json'])
+    eq('confirm: a plan switch under --json asks for --yes', [r.code, /Re-run with --yes/.test(json(r)?.error?.message ?? '')], [2, true])
+    r = await run(['billing:topup', '--amount', '5', '--json'])
+    eq('confirm: a top-up asks for --yes', r.code, 2)
+    r = await run(['face:doc:delete', 'd1', '--json'])
+    eq('confirm: a document delete asks for --yes', r.code, 2)
+    eq('confirm: nothing refused was sent', seen.filter((l) => !l.startsWith('GET')), [])
+
+    r = await run(['face:get', 'ghost', '--json'])
+    const text = await run(['face:get', 'ghost'])
+    eq('json error: carries the HTTP status', json(r)?.error?.status, 404)
+    eq('json error: the same exit code as text', r.code, text.code)
+    r = await run(['face:doc:make', 'd1', '--json'])
+    eq('json error: carries error_code', json(r)?.error?.error_code, 'already_compiled')
+    r = await run(['face:doc:make', 'rushy', '--rush', '--json'])
+    eq('rush 402: carries error_code and the premium', [json(r)?.error?.error_code, json(r)?.error?.rush_premium_usd], ['insufficient_credit_for_rush', 1.25])
+    r = await run(['face:doc:make', 'rushy', '--rush'])
+    eq('rush 402: text names the premium and both ways on', [/Rush premium: \$1\.25/.test(r.stderr), /without --rush/.test(r.stderr), /billing:topup/.test(r.stderr)], [true, true, true])
+    r = await run(['face:doc:make', 'sched', '--no-wait', '--json'])
+    eq('scheduled: --json carries starts_at', typeof json(r)?.starts_at, 'string')
+    eq('scheduled: no --rush sends no body', makeBodies.at(-1), '')
+    r = await run(['face:doc:make', 'sched', '--no-wait', '--rush'])
+    eq('scheduled: text says when it starts', /Scheduled start: .* \(in (39|40) min\)/.test(r.stderr), true)
+    eq('scheduled: --rush is sent', makeBodies.at(-1), '{"rush":true}')
+    r = await run(['face:doc:make', 'started', '--rush'])
+    eq('rush too late: text says it already started', /--rush no longer applies/.test(r.stderr), true)
+    r = await run(['face:doc:make', 'started', '--rush', '--json'])
+    eq('rush too late: --json carries the code', json(r)?.error?.error_code, 'compile_already_started')
+    r = await run(['face:style:make', 'alice', '--source', 'd1'])
+    eq('style: no --allow-paid sends oauth_only', styleBodies.at(-1)?.oauth_only, true)
+    eq('style 409: link ChatGPT or --allow-paid', [/auth:connect openai/.test(r.stderr), /--allow-paid/.test(r.stderr)], [true, true])
+    r = await run(['face:style:make', 'alice', '--source', 'd1', '--allow-paid'])
+    eq('style: --allow-paid sends oauth_only false', styleBodies.at(-1)?.oauth_only, false)
+    eq('style 402: estimate, balance and top-up', [/up to \$3\.40/.test(r.stderr), /\$1\.25/.test(r.stderr), /billing:topup/.test(r.stderr)], [true, true, true])
+    r = await run(['face:style:make', 'alice', '--source', 'd1', '--allow-paid', '--json'])
+    eq('style 402: --json carries the figures', [json(r)?.error?.error_code, json(r)?.error?.estimated_usd, json(r)?.error?.balance_usd], ['insufficient_credit_for_style_build', 3.4, 1.25])
+    r = await run(['face:list', '--json'], {...base, HW_API_KEY: '', HW_TOKEN: ''})
+    eq('json error: no credentials still answers in JSON', /Authentication required/.test(json(r)?.error?.message ?? ''), true)
+    r = await run(['face:list', '--json', '--toon'])
+    eq('json error: --json with --toon answers in JSON', json(r) !== undefined, true)
+  } finally {
+    srv.close()
+    fs.rmSync(home, {recursive: true, force: true})
+  }
+}
+await errorsAndConfirmations()
+
+// --- saved credentials stay with the API they belong to ----------------------
+// Run in a child with its own HOME: config.js reads ~/.headwaters at import.
+async function credentials() {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'faces-check-'))
+  fs.mkdirSync(path.join(home, '.headwaters'))
+  const cfg = path.join(home, '.headwaters', 'config.json')
+  const probe = (config, base, env = {}) => {
+    fs.writeFileSync(cfg, typeof config === 'string' ? config : JSON.stringify(config))
+    const code = `import('${new URL('../dist/config.js', import.meta.url).href}').then((c) => {
+      try { const r = c.resolveCredentials({}, ${JSON.stringify(base)}); console.log(JSON.stringify({token: r.token ?? null, apiKey: r.apiKey ?? null, withheld: Boolean(r.withheld)})) }
+      catch (e) { console.log(JSON.stringify({error: e.message})) } })`
+    const out = spawnSync(process.execPath, ['--input-type=module', '-e', code], {env: {...process.env, HOME: home, HW_TOKEN: '', HW_API_KEY: '', ...env}, encoding: 'utf8'})
+    return JSON.parse(out.stdout.trim().split('\n').at(-1))
+  }
+  try {
+    const saved = {token: 'jwt-saved', credentials_base_url: 'https://api.faces.sh'}
+    eq('creds: sent to their own API', probe(saved, 'https://api.faces.sh'), {token: 'jwt-saved', apiKey: null, withheld: false})
+    eq('creds: withheld from another host', probe(saved, 'https://httpbin.org/anything'), {token: null, apiKey: null, withheld: true})
+    eq('creds: an older config belongs to its base_url', probe({api_key: 'sk-faces-x', base_url: 'https://staging.faces.sh'}, 'https://staging.faces.sh'), {token: null, apiKey: 'sk-faces-x', withheld: false})
+    eq('creds: an older config with no base_url belongs to the default', probe({token: 't'}, 'https://example.com').withheld, true)
+    eq('creds: an explicit key is always used', probe(saved, 'https://example.com', {HW_API_KEY: 'sk-faces-env'}).apiKey, 'sk-faces-env')
+    eq('creds: never over plain http to another machine', /plain http/.test(probe(saved, 'http://example.com', {HW_API_KEY: 'sk-faces-env'}).error ?? ''), true)
+    eq('creds: plain http to localhost is fine', probe({token: 't', credentials_base_url: 'http://localhost:8000'}, 'http://localhost:8000').token, 't')
+    // A corrupt config is kept, not overwritten.
+    fs.writeFileSync(cfg, '{not json')
+    spawnSync(process.execPath, ['bin/run.js', 'config:set', 'catalog', 'false'], {env: {...process.env, HOME: home}, encoding: 'utf8'})
+    eq('config: a corrupt file is backed up before a write', fs.readdirSync(path.join(home, '.headwaters')).some((f) => f.startsWith('config.json.corrupt-')), true)
+    const typo = spawnSync(process.execPath, ['bin/run.js', 'config:set', 'apikey', 'x'], {env: {...process.env, HOME: home}, encoding: 'utf8'})
+    eq('config:set: a typo is refused and named', [typo.status !== 0, /Did you mean api_key/.test(typo.stderr)], [true, true])
+    const url = spawnSync(process.execPath, ['bin/run.js', 'config:set', 'base_url', 'not-a-url'], {env: {...process.env, HOME: home}, encoding: 'utf8'})
+    eq('config:set: base_url must be a URL', url.status !== 0, true)
+  } finally {
+    fs.rmSync(home, {recursive: true, force: true})
+  }
+}
+await credentials()
+
+// --- a server that is not the Headwaters API is named as such ---------------------
+async function notFaces() {
+  const srv = http.createServer((req, res) => {
+    if (req.url.startsWith('/api/v1/')) { res.writeHead(404, {'content-type': 'application/json'}); return res.end('{"detail":"Not Found"}') }
+    res.writeHead(404, {'content-type': 'text/html'}); res.end('<html>nope</html>')
+  })
+  await new Promise((r) => srv.listen(0, r))
+  const origin = `http://127.0.0.1:${srv.address().port}`
+  const message = async (base) => { try { await new HwClient(base, undefined, 'sk-check').get('/v1/faces'); return '' } catch (e) { return e.message } }
+  try {
+    const html = await message(origin)
+    eq('not faces: says so', /did not answer like the Headwaters API/.test(html), true)
+    eq('not faces: no update hint', /out of date/.test(html), false)
+    eq('base path: names the fix', /routes already include it/.test(await message(`${origin}/api`)), true)
+    const closed = http.createServer()
+    await new Promise((r) => closed.listen(0, r))
+    const freed = closed.address().port
+    await new Promise((r) => closed.close(r))
+    const down = await message(`http://127.0.0.1:${freed}`)
+    eq('unreachable: names the cause and the base URL', [/ECONNREFUSED/.test(down), /config:show/.test(down)], [true, true])
+  } finally {
+    srv.close()
+  }
+}
+await notFaces()
+
+// --- a stream with no events in it is the error it carries -------------------
+async function bareStream() {
+  const srv = http.createServer((req, res) => {
+    res.writeHead(200, {'content-type': 'text/event-stream; charset=utf-8'})
+    res.end(': keep-alive\n\n{\n  "error": {\n    "message": "Invalid \'temperature\'",\n    "type": "invalid_request_error",\n    "code": null\n  }\n}\n')
+  })
+  await new Promise((r) => srv.listen(0, r))
+  const client = new HwClient(`http://127.0.0.1:${srv.address().port}`, undefined, 'sk-check')
+  let caught
+  try {
+    for await (const _ of client.stream('/v1/chat/completions', {})) { /* drain */ }
+  } catch (err) {
+    caught = err
+  }
+  eq('bare stream: thrown as a refusal', [caught instanceof HwAPIError, caught?.statusCode, caught?.message], [true, 400, "Invalid 'temperature'"])
+  srv.close()
+}
+await bareStream()
+{
+  const fail = (m) => { throw new Error(m) }
+  const t = (raw) => { try { return parseTemperature(raw, fail) } catch { return 'refused' } }
+  eq('temperature: in range', [t('0'), t('0.7'), t('2')], [0, 0.7, 2])
+  eq('temperature: out of range or not a number', [t('-1'), t('2.1'), t('abc'), t('')], ['refused', 'refused', 'refused', 'refused'])
+}
+
+// --- a refused saved key falls back to the saved login; a chosen one does not
+async function keyFallback() {
+  const srv = http.createServer((req, res) => {
+    const ok = req.headers.authorization === 'Bearer jwt-ok'
+    res.writeHead(ok ? 200 : 401, {'content-type': 'application/json'})
+    res.end(ok ? '{"data": []}' : '{"detail": "Invalid or expired credentials"}')
+  })
+  await new Promise((r) => srv.listen(0, r))
+  const base = `http://127.0.0.1:${srv.address().port}`
+  const quiet = process.stderr.write.bind(process.stderr)
+  process.stderr.write = () => true
+  try {
+    const saved = new HwClient(base, 'jwt-ok', 'sk-faces-dead', undefined, true)
+    eq('fallback: a dead saved key uses the login', (await saved.get('/v1/faces').then(() => 'ok', (e) => e.statusCode)), 'ok')
+    const chosen = new HwClient(base, 'jwt-ok', 'sk-faces-dead', undefined, false)
+    eq('fallback: a key chosen for the run does not', (await chosen.get('/v1/faces').then(() => 'ok', (e) => e.statusCode)), 401)
+  } finally {
+    process.stderr.write = quiet
+    srv.close()
+  }
+}
+await keyFallback()
+
+// --- catalog files keep what they did not write, and never stack blocks ------
+{
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'faces-check-'))
+  const code = `
+    const {CatalogService} = await import('${new URL('../dist/catalog.js', import.meta.url).href}')
+    const {GroupCatalogService, stripFrontmatter} = await import('${new URL('../dist/group-catalog.js', import.meta.url).href}')
+    const fs = await import('node:fs'); const path = await import('node:path'); const os = await import('node:os')
+    const face = path.join(os.homedir(), '.headwaters', 'catalog', 'ada', 'FACE.md')
+    fs.mkdirSync(path.dirname(face), {recursive: true})
+    fs.writeFileSync(face, '---\\nrole: subject\\nsource_type: letters\\nsources_compiled:\\n  - a.pdf\\n  - b.pdf\\n---\\n# Ada recipe\\n')
+    new CatalogService().writeFace({name: 'Ada', alias: 'ada', component_counts: [1, 2], compile_tokens_synced: 0})
+    new CatalogService().writeFace({name: 'Ada', alias: 'ada', component_counts: [1, 2], compile_tokens_synced: 0})
+    const team = path.join(os.homedir(), '.headwaters', 'teams', 'panel', 'TEAM.md')
+    fs.mkdirSync(path.dirname(team), {recursive: true})
+    fs.writeFileSync(team, '---\\nid: t1\\nname: Panel\\nmembers: [aa-uuid]\\n---\\n---\\nname: Panel\\nmembers: [ada, bob]\\nmax_rounds: 3\\n---\\nflowchart TD\\n')
+    const tc = new GroupCatalogService()
+    tc.writeGroup('panel', {id: 't1', name: 'Panel', members: ['ada', 'bob']}, '---\\nname: Panel\\n---\\nflowchart TD\\n')
+    console.log(JSON.stringify({face: fs.readFileSync(face, 'utf8'), team: fs.readFileSync(team, 'utf8'), strip: stripFrontmatter('---\\na: 1\\n---\\n---\\nb: 2\\n---\\nbody\\n'), byId: tc.findById('t1')}))`
+  const out = spawnSync(process.execPath, ['--input-type=module', '-e', code], {env: {...process.env, HOME: home}, encoding: 'utf8'})
+  const r = JSON.parse(out.stdout.trim().split('\n').at(-1))
+  eq('FACE.md: one frontmatter block after two writes', (r.face.match(/^---$/gm) ?? []).length, 2)
+  eq('FACE.md: recipe keys and list items kept', [/role: subject/.test(r.face), /  - b\.pdf/.test(r.face), /# Ada recipe/.test(r.face)], [true, true, true])
+  eq('FACE.md: compiled_tokens written at 0', /compiled_tokens: 0/.test(r.face), true)
+  eq('TEAM.md: stacked blocks collapse to one', (r.team.match(/^---$/gm) ?? []).length, 2)
+  eq('TEAM.md: a skill key survives', /max_rounds: 3/.test(r.team), true)
+  eq('TEAM.md: the protocol keeps no frontmatter', r.team.trim().endsWith('---\nflowchart TD'), true)
+  eq('stripFrontmatter: every leading block', r.strip, 'body\n')
+  eq('group: found by id', r.byId, 'panel')
+  fs.rmSync(home, {recursive: true, force: true})
+}
+
+// --- a failed style job is a failed wait --------------------------------------
+async function failedStyleJob() {
+  const srv = http.createServer((req, res) => {
+    res.writeHead(200, {'content-type': 'application/json'})
+    res.end(JSON.stringify(req.url.startsWith('/v1/oauth') ? [] : {job_id: 'j1', status: 'failed', error: 'CHATGPT_AUTH: sign-in expired'}))
+  })
+  await new Promise((r) => srv.listen(0, r))
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'faces-check-'))
+  const env = {...process.env, HOME: home, HW_BASE_URL: `http://127.0.0.1:${srv.address().port}`, HW_TOKEN: 'jwt-check'}
+  const run = (args) => new Promise((r) => execFile(process.execPath, ['bin/run.js', ...args], {env}, (err, stdout) => r({code: err ? err.code : 0, stdout})))
+  try {
+    const text = await run(['face:style:status', 'j1'])
+    eq('style status: a failed job exits 1', text.code, 1)
+    eq('style status: says nothing is linked', /No ChatGPT account is linked/.test(text.stdout), true)
+    eq('style status: --json exits 1 too', (await run(['face:style:status', 'j1', '--json'])).code, 1)
+  } finally {
+    srv.close()
+    fs.rmSync(home, {recursive: true, force: true})
+  }
+}
+await failedStyleJob()
+
+// --- groups, and the new package's clean break: the old names are gone ------
+
+async function groupNames() {
+  const hits = []
+  const GID = '11111111-2222-3333-4444-555555555555'
+  const srv = http.createServer((req, res) => {
+    let body = ''
+    req.on('data', (c) => (body += c))
+    req.on('end', () => {
+      hits.push(`${req.method} ${req.url}${body ? ' ' + body : ''}`)
+      res.writeHead(200, {'content-type': 'application/json'})
+      if (req.url.startsWith('/v1/me/groups')) return res.end(JSON.stringify({data: [{id: GID, name: 'Panel', kind: 'group', member_count: 2}]}))
+      if (req.url.endsWith('/tags')) return res.end(JSON.stringify({tags: ['x']}))
+      if (req.url.startsWith('/v1/faces?') && req.url.includes('for=')) {
+        return res.end(JSON.stringify({data: Array.from({length: 13}, (_, i) => ({alias: `f${i}`, name: `F${i}`, fit: 0.9 - i / 100})), has_more: false}))
+      }
+      if (req.url.startsWith('/v1/faces?') || req.url.startsWith('/v1/faces/?')) return res.end(JSON.stringify({data: [], has_more: false}))
+      res.end(JSON.stringify({ok: true}))
+    })
+  })
+  await new Promise((r) => srv.listen(0, r))
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'faces-check-'))
+  const env = {...process.env, HOME: home, HW_BASE_URL: `http://127.0.0.1:${srv.address().port}`, HW_TOKEN: 'jwt-check'}
+  const run = (args) => new Promise((r) => execFile(process.execPath, ['bin/run.js', ...args], {env}, (err, stdout, stderr) => r({code: err?.code ?? 0, out: stdout, err: stderr})))
+  try {
+    let r = await run(['group:list'])
+    eq('group:list calls /v1/me/groups', [r.code, hits.at(-1), /Panel/.test(r.out)], [0, 'GET /v1/me/groups', true])
+    eq('group:list: no deprecation warning', /deprecated/.test(r.err), false)
+    r = await run(['group:tag:list', GID])
+    eq('group:tag:list', [r.code, hits.at(-1)], [0, `GET /v1/groups/${GID}/tags`])
+    r = await run(['group:members', GID])
+    eq('group:members', hits.at(-1), `GET /v1/groups/${GID}/members`)
+    r = await run(['face:list', '--for', 'a dinner'])
+    eq('face:list --for: the best 10, then how many more and how to see them',
+      [r.code, r.out.trim().split('\n').filter((l) => /^0\.\d\d  f\d+/.test(l)).length, /^0\.90  f0 /.test(r.out), /3 more faces fit less well\. --limit N shows the first N; --limit 0 shows all\.\s*$/.test(r.out)],
+      [0, 10, true, true])
+    r = await run(['face:list', '--for', 'a dinner', '--limit', '0'])
+    eq('face:list --for --limit 0: all of them, no footer', [r.out.trim().split('\n').length, /more face/.test(r.out)], [13, false])
+    r = await run(['face:list', '--for', 'a dinner', '--limit', '2', '--json'])
+    eq('face:list --limit 2 --json', [JSON.parse(r.out).data.map((f) => f.alias), JSON.parse(r.out).more], [['f0', 'f1'], 11])
+    r = await run(['face:list'])
+    eq('face:list without --for or --limit: unchanged, no footer', /more face/.test(r.out), false)
+    r = await run(['face:list', '--group', GID])
+    eq('face:list --group sends group_id', [r.code, hits.some((h) => h.includes(`group_id=${GID}`))], [0, true])
+    const before = hits.length
+    for (const args of [['team:list'], ['team:members', GID], ['face:teams', 'ada', '--group', GID]]) {
+      r = await run(args)
+      eq(`${args[0]} is gone`, [r.code !== 0, /not found/i.test(r.err)], [true, true])
+    }
+    for (const args of [['face:list', '--team', GID], ['face:groups', 'ada', '--team', GID], ['models:list', '--codex'], ['maestro:decide', '--face', '@ada', '--reasoning']]) {
+      r = await run(args)
+      eq(`${args.at(-2) === '--team' ? args[0] + ' --team' : args.find((a) => a.startsWith('--'))} is gone`, [r.code !== 0, /Nonexistent flag/i.test(r.err)], [true, true])
+    }
+    eq('removed names call nothing', hits.length, before)
+    r = await run(['face:list', '--group', 'not-an-id'])
+    eq('face:list --group: a bad id names group:list', /--group takes a group id[\s\S]*group:list/.test(r.err), true)
+    r = await run(['face:groups', 'ada', '--group', GID])
+    eq('face:groups --group', [r.code, hits.at(-1)], [0, `PUT /v1/faces/ada/groups {"group_ids":["${GID}"]}`])
+    const help = spawnSync(process.execPath, ['bin/run.js', '--help'], {env, encoding: 'utf8'}).stdout
+    eq('help: group topic shown, no team topic', [/\n  group\s/.test(help), /\n  team\s/.test(help)], [true, false])
+  } finally {
+    srv.close()
+    fs.rmSync(home, {recursive: true, force: true})
+  }
+}
+await groupNames()
+
+// --- a backup written before the rename restores its groups -------------------
+{
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'faces-check-'))
+  const file = path.join(home, 'old.json')
+  fs.writeFileSync(file, JSON.stringify({version: 2, faces: [], teams: [{name: 'Panel', description: null, protocol: null, tags: [], members: []}]}))
+  const out = spawnSync(process.execPath, ['bin/run.js', 'catalog:restore', file], {env: {...process.env, HOME: home, HW_BASE_URL: 'http://127.0.0.1:9', HW_TOKEN: 'x'}, encoding: 'utf8'})
+  eq('restore: an older backup\'s groups are counted', /Groups: 1/.test(out.stdout + out.stderr), true)
+  fs.rmSync(home, {recursive: true, force: true})
+}
+
+// --- meters never read as spent while some is left ---------------------------
+eq('tokens: 6.25M keeps its precision', tokens(6_250_000), '6.25M')
+eq('tokens: 2,496,000 is not 2.5M', tokens(2_496_000), '2.49M')
+eq('tokens: 999,999 is not 1000k', tokens(999_999), '999.9k')
+eq('tokens: 9,950,000 rounds down', tokens(9_950_000), '9.95M')
+eq('tokens: 637k', tokens(637_000), '637k')
+eq('percent: nearly full is not 100%', percentUsed(637_000, 640_000), '99%')
+eq('percent: a little use shows', percentUsed(1, 2_500_000), '<1%')
+eq('percent: none', percentUsed(0, 100), '0%')
+eq('allowance: an unknown unlimited key', allowanceLines({plan: 'team', allowances: {new_thing: {used: 3, limit: -1}}}).some((l) => /3 used, unlimited/.test(l)), true)
+
+// --- tables, dollars and dates for billing output -----------------------------
+eq('usd: zero', usd(0), '$0.00')
+eq('usd: cents', usd(0.013268), '$0.0133')
+eq('usd: dollars', usd(9.518832), '$9.52')
+eq('date: real', isCalendarDate('2026-10-21'), true)
+eq('date: no month 13, no Feb 30, no words', [isCalendarDate('2026-13-01'), isCalendarDate('2026-02-30'), isCalendarDate('garbage')], [false, false, false])
+eq('table: numbers right-aligned', table(['A', 'N'], [['x', '1'], ['yy', '100']], new Set(['N'])), ['A     N', 'x     1', 'yy  100'])
+
+// --- names that break every listing are refused -------------------------------
+eq('name: ordinary', badFaceName('Ada Lovelace'), undefined)
+eq('name: too long', /200 or fewer/.test(badFaceName('x'.repeat(5000)) ?? ''), true)
+eq('name: a right-to-left override', /text-direction/.test(badFaceName('abc‮def') ?? ''), true)
+eq('name: empty', badFaceName('   '), 'The name is empty.')
+
+// --- decide: limits checked before a face is asked ----------------------------
+const qs = (n, extra = {}) => Object.fromEntries(Array.from({length: n}, (_, i) => [`q${i}`, {type: 'noul', instructions: 'x', ...extra}]))
+eq('questions: 10 with a face is fine', questionsProblem(qs(10), true), undefined)
+eq('questions: 11 with a face is refused', /At most 10 questions with a face \(got 11\)/.test(questionsProblem(qs(11), true) ?? ''), true)
+eq('questions: 32 with no face is fine', questionsProblem(qs(32), false), undefined)
+eq('questions: 33 with no face is refused', /At most 32/.test(questionsProblem(qs(33), false) ?? ''), true)
+eq('choice: one option is refused', /has 1 option/.test(questionsProblem({c: {type: 'choice', criteria: {a: null}}}, true) ?? ''), true)
+eq('choice: 255 options is fine', questionsProblem({c: {type: 'choice', criteria: Object.fromEntries(Array.from({length: 255}, (_, i) => [`o${i}`, null]))}}, false), undefined)
+
+// --- decide --format openai ------------------------------------------------------
+const oaQs = {go: {type: 'noul', instructions: 'Go?'}, why: {type: 'choice', instructions: 'Why?', criteria: {laws: 'the agreement', friends: null}}, mood: {type: 'score', instructions: 'Mood?', criteria: ['calm', 'furious']}}
+const oa = toOpenAIDecision('alice@clef', 'A situation.', oaQs)
+eq('openai: input is the state', oa.input, 'A situation.')
+eq('openai: noul is a predicate', oa.questions[0], {type: 'predicate', name: 'go', instructions: 'Go?'})
+eq('openai: choices keep descriptions, omit null', oa.questions[1].choices, [{value: 'laws', description: 'the agreement'}, {value: 'friends'}])
+eq('openai: levels are labels', oa.questions[2].levels, [{label: 'calm'}, {label: 'furious'}])
+eq('openai: no questions, no field', 'questions' in toOpenAIDecision('alice', 'x', undefined), false)
+let threwNoul = false
+try { toOpenAIDecision('m', 'x', {n: {type: 'noul', instructions: 'i', criteria: {true: 'a', false: 'b'}}}) } catch { threwNoul = true }
+eq('openai: noul descriptions refused', threwNoul, true)
+const back = fromOpenAIAnswers([
+  {type: 'predicate', name: 'go', probability: 0.08},
+  {type: 'choice', name: 'why', choice: 'laws', probabilities: [{value: 'laws', probability: 0.99}, {value: 'friends', probability: 0.01}], confidence: 0.98},
+  {type: 'score', name: 'mood', score: 0.4, probabilities: [{probability: 0.6}, {probability: 0.4}], confidence: 0.5},
+], oaQs)
+eq('openai answers: predicate prints as a noul', back.go, {type: 'noul', noul: 0.08})
+eq('openai answers: choice probabilities by value', back.why.probabilities, {laws: 0.99, friends: 0.01})
+eq('openai answers: score legend from the sent levels', back.mood.legend, {0: 'calm', 1: 'furious'})
+
+// --- refusals, error codes and duplicate top-ups --------------------------------
+eq('402 no card: no repeated sentence', refusalGuidance(402, undefined, 'No payment method on file. Add a card first.'), 'Add a card with: hw billing:card-setup')
+eq('failure: error_code wins over the text', /No ChatGPT account is linked/.test(jobFailureMessage('sign-in expired', false, 'chatgpt_auth')), true)
+eq('failure: no code falls back to the text', /most likely expired/.test(jobFailureMessage('CHATGPT_AUTH: x', true, null)), true)
+
+async function duplicateTopup() {
+  const srv = http.createServer((req, res) => {
+    res.writeHead(409, {'content-type': 'application/json'})
+    res.end(JSON.stringify({detail: {error_code: 'duplicate_topup', message: 'You topped up $5.00 a minute ago.', repeat_with: {allow_duplicate: true}}}))
+  })
+  await new Promise((r) => srv.listen(0, r))
+  const client = new HwClient(`http://127.0.0.1:${srv.address().port}`, undefined, 'sk-check')
+  try {
+    await client.post('/v1/billing/topup', {body: {amount_usd: 5}})
+    eq('duplicate top-up: refused', false, true)
+  } catch (err) {
+    eq('duplicate top-up: code from the detail object', err.errorCode, 'duplicate_topup')
+    eq('duplicate top-up: the message, not the object', err.message, 'You topped up $5.00 a minute ago.')
+  } finally {
+    srv.close()
+  }
+}
+await duplicateTopup()
+
+// --- --tool names: shape only, since the API keeps no list ---------------------
+eq('tool: ordinary', badToolNames(['web_search', 'code-interpreter']), undefined)
+eq('tool: a space is a typo', /not a tool name/.test(badToolNames(['web search']) ?? ''), true)
+eq('tool: empty', badToolNames(['  ']), 'A --tool name is empty.')
+eq('tool: twice', badToolNames(['a', ' a']), "'a' is given twice.")
+
+eq('compile cost: small says nothing', compileCostNote(20_000, 25), undefined)
+eq('compile cost: large names the price', /about \$2\.50 on credits \(\$25 per million/.test(compileCostNote(100_000, 25) ?? ''), true)
+
+// --- fidelity: a whole run through the real commands ---------------------------
+async function fidelityFlow() {
+  const bodies = []
+  const turns = []
+  const srv = http.createServer((req, res) => {
+    let b = ''
+    req.on('data', (c) => { b += c })
+    req.on('end', () => {
+      const send = (status, body) => { res.writeHead(status, {'content-type': 'application/json'}); res.end(JSON.stringify(body)) }
+      const body = b ? JSON.parse(b) : {}
+      bodies.push(`${req.method} ${req.url} ${b}`)
+      const done = turns.filter((t) => t.pick).length >= 2
+      const run = () => ({object: 'fidelity_run', run_id: 'r1', alias: 'ana', status: done ? 'done' : 'active', competitor: 'gpt-x', competitor_texts: 3,
+        turns_total: 2, turns_done: turns.filter((t) => t.pick).length, score: done ? 1.7 : null, score_so_far: turns.reduce((a, t) => a + (t.score ?? 0), 0),
+        next: done ? null : turns.length && !turns[turns.length - 1].pick ? {turn: turns.length, awaiting: 'choice'} : {turn: turns.length + 1, awaiting: 'message'},
+        thread_id: null, turns: turns.map((t) => ({...t, ...(done ? {face: 'a'} : {})}))})
+      if (req.url === '/v1/faces/ana/fidelity') return send(201, {...run(), estimated_usd: 0.12})
+      if (req.url === '/v1/faces/bare/fidelity') return send(422, {detail: {error_code: 'fidelity_nothing_compiled', message: "'bare' has nothing compiled yet."}})
+      if (req.url === '/v1/fidelity/r1/turns') {
+        if (body.message === 'slow') return send(200, {detail: 'the face could not answer', error: {message: 'the face could not answer', type: 'api_error', code: '502', status: 502}})
+        turns.push({n: turns.length + 1, message: body.message, answers: {a: 'A-text', b: 'B-text'}})
+        return send(200, {object: 'fidelity_turn', run_id: 'r1', turn: turns.length, answers: {a: 'A-text', b: 'B-text'}})
+      }
+      const m = /^\/v1\/fidelity\/r1\/turns\/(\d+)\/choice$/.exec(req.url)
+      if (m) {
+        const t = turns[Number(m[1]) - 1]
+        Object.assign(t, {pick: body.pick, correction: body.correction ?? null, score: body.correction ? 0.7 : 1})
+        const fin = turns.filter((x) => x.pick).length >= 2
+        return send(200, {object: 'fidelity_choice', run_id: 'r1', turn: t.n, score: t.score, score_so_far: turns.reduce((a, x) => a + (x.score ?? 0), 0), done: fin, ...(fin ? {fidelity: 1.7} : {})})
+      }
+      if (req.url === '/v1/fidelity/r1') return send(200, run())
+      if (req.url === '/v1/fidelity/r1/save-thread') return send(200, {object: 'fidelity_thread', run_id: 'r1', thread_id: 't9', created: true})
+      send(404, {detail: {error_code: 'fidelity_run_not_found', message: 'No such fidelity run.'}})
+    })
+  })
+  await new Promise((r) => srv.listen(0, r))
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'faces-check-'))
+  const env = {...process.env, HOME: home, HW_BASE_URL: `http://127.0.0.1:${srv.address().port}`, HW_TOKEN: 'jwt-check'}
+  const run = (args) => new Promise((r) => execFile(process.execPath, ['bin/run.js', ...args], {env}, (err, stdout, stderr) => r({code: err?.code ?? 0, out: stdout + stderr})))
+  try {
+    const g = await run(['causes', 'ana'])
+    eq('causes is removed', [g.code !== 0, /not found/i.test(g.out)], [true, true])
+    let r = await run(['face:fidelity:start', 'ana'])
+    eq('face:fidelity:start names the next step', /run:\s+r1[\s\S]*face:fidelity:turn r1 -m/.test(r.out), true)
+    r = await run(['face:fidelity:start', 'bare'])
+    eq('fidelity:start: nothing compiled gets a hint', /Add a source with: hw face:compile bare --file/.test(r.out), true)
+    r = await run(['face:fidelity:turn', 'r1', '-m', 'slow'])
+    eq('fidelity:turn: a held refusal is an error', [r.code, /HTTP 502: the face could not answer/.test(r.out)], [2, true])
+    r = await run(['face:fidelity:turn', 'r1', '-m', 'hello'])
+    eq('face:fidelity:turn prints both answers', /a:\nA-text\n\nb:\nB-text/.test(r.out), true)
+    r = await run(['face:fidelity:pick', 'r1', 'a'])
+    eq('face:fidelity:pick finds the open turn', bodies.some((x) => x.startsWith('POST /v1/fidelity/r1/turns/1/choice {"pick":"a"}')), true)
+    r = await run(['face:fidelity:pick', 'r1', 'b'])
+    eq('face:fidelity:pick before a message says so', /Turn 2 has no answers to pick from yet/.test(r.out), true)
+    await run(['face:fidelity:turn', 'r1', '-m', 'again'])
+    r = await run(['face:fidelity:pick', 'r1', 'b', '--correction', 'what I would say'])
+    eq('face:fidelity:pick sends the correction', bodies.some((x) => x.includes('/turns/2/choice {"pick":"b","correction":"what I would say"}')), true)
+    eq('fidelity:pick: the final score', /Finished\. Fidelity: 1\.7 out of 10/.test(r.out), true)
+    r = await run(['face:fidelity:get', 'r1'])
+    eq('face:fidelity:get reveals the face once done', /turn 1: picked a, the face, accepted, scored 1\n\s+turn 2: picked b, the competitor, corrected, scored 0\.7/.test(r.out), true)
+    r = await run(['face:fidelity:save-thread', 'r1'])
+    eq('face:fidelity:save-thread names the compile', /Saved as thread t9\nCompile it into the face: hw face:thread:make t9/.test(r.out), true)
+    r = await run(['face:fidelity:run', 'ana'])
+    eq('face:fidelity:run needs a terminal', /needs a person at a terminal/.test(r.out), true)
+  } finally {
+    srv.close()
+    fs.rmSync(home, {recursive: true, force: true})
+  }
+}
+await fidelityFlow()
+
+eq('fidelity score: one place', [score10(7), score10(7.25), score10(null)], ['7', '7.3', '-'])
+
+// --- benchmark: the result, in plain lines -------------------------------------
+eq(
+  'benchmark result lines',
+  resultLines({winner: 'face', gap: 0.12, ci95: {lo: 0.05, hi: 0.19, resolved: true}, face: 0.62, reference: 0.5, rounds_requested: 100, rounds_fought: 98,
+    usage: {spend_usd: 1.234, budget_usd: 5}, seed: 42, by_length: {short: {rounds: 40, face: 0.6, reference: 0.5, gap: 0.1, ci95: null, winner: 'face'}}, by_medium: {}, warnings: ['W']}),
+  [
+    'winner:     the face',
+    'gap:        +0.12 (95% interval +0.05 to +0.19)',
+    'scores:     face 0.62, reference 0.50',
+    'rounds:     98 of 100',
+    'spent:      $1.23 of a $5.00 cap',
+    'seed:       42  (pass --seed 42 to draw the same rounds again)',
+    'by length:',
+    '  short: face 0.60, reference 0.50, gap +0.10, won by face (40 rounds)',
+    'warning: W',
+  ],
+)
+eq('benchmark: too close to call', resultLines({winner: null, gap: 0.01, ci95: {lo: -0.03, hi: 0.05, resolved: false}})[0], 'winner:     neither, too close to call')
+eq('benchmark: no style gets a hint', benchmarkHint(new HwAPIError(422, 'x', {errorCode: 'benchmark_no_style'}), 'ana'), 'Build its style with: hw face:style:make ana --all')
+
+// --- document vs thread: a labelled exchange is flagged, an essay is not --------
+const interview = 'Interviewer: Tell me about yourself.\nAda: I am a designer in Lisbon.\n' +
+  'Interviewer: What drives your work?\nAda: Making things people can repair themselves.\n'
+eq('transcript: speakers found', transcriptSpeakers(interview), ['Interviewer', 'Ada'])
+eq('transcript: Q and A', transcriptSpeakers('Q: Why?\nA: Because.\nQ: And then?\nA: Then we left.'), ['Q', 'A'])
+eq('transcript: multi-word labels', transcriptSpeakers('Dr. Jane Smith: Hello there.\nBob Lee: Hi.\nDr. Jane Smith: How are you?\nBob Lee: Fine.'), ['Dr. Jane Smith', 'Bob Lee'])
+eq('essay is not a transcript', transcriptSpeakers('I have always loved the sea.\n\nIt taught me patience.\n\nNote: this was written in 1999.'), null)
+eq('one speaker is not a transcript', transcriptSpeakers('Ada: one.\nAda: two.\nAda: three.\nAda: four.'), null)
+eq('a few labels in long prose are not a transcript',
+  transcriptSpeakers(['Note: a.', 'Warning: b.', 'Note: c.', 'Warning: d.', ...Array(20).fill('Plain prose line.')].join('\n')), null)
+eq('URLs and times are not labels', transcriptSpeakers('See https://example.com\nAt 10:30 we met.\nhttp://a.b\n12:00 lunch'), null)
+eq('essay warns nothing', transcriptWarningLines('Just an essay.', 'ada', 'essay.txt'), [])
+eq('transcript warning names the thread upload', transcriptWarningLines(interview, 'ada', 'interview.txt'), [
+  'Warning: interview.txt reads as an exchange between speakers (Interviewer, Ada).',
+  "A document is the face's own writing, so every line in it, other speakers included, is read as the face's words.",
+  "Upload an interview, transcript or dialogue as a thread instead, naming the face's speaker:",
+  '  hw face:compile ada --file interview.txt --kind thread --face-speaker NAME',
+])
+
+// --- held chat: a refusal in a 200 body is an error, an answer never is ---------
+const TIMEOUT = 'the face did not finish answering within 300s, so the request was stopped; retry.'
+const heldChat = heldChatError({detail: TIMEOUT, error: {message: TIMEOUT, type: 'api_error', param: null, code: '504', status: 504}})
+eq('held chat completions: status and message', [heldChat?.statusCode, heldChat?.message, heldChat?.errorCode], [504, TIMEOUT, 'api_error'])
+const heldResp = heldChatError({detail: 'this face needs recompiling', error: {message: 'this face needs recompiling', type: 'invalid_request_error', param: null, code: '409', status: 409}})
+eq('held responses: 409', [heldResp?.statusCode, heldResp?.message], [409, 'this face needs recompiling'])
+const heldMsg = heldChatError({type: 'error', detail: TIMEOUT, error: {type: 'api_error', message: TIMEOUT, status: 504}})
+eq('held messages (Anthropic shape): status and message', [heldMsg?.statusCode, heldMsg?.message], [504, TIMEOUT])
+eq('held messages: no status is a 502', heldChatError({type: 'error', error: {type: 'api_error', message: 'boom'}})?.statusCode, 502)
+eq('held: a named code is kept', heldChatError({error: {message: 'm', code: 'style_medium_unavailable', status: 400}})?.errorCode, 'style_medium_unavailable')
+eq('chat completion is an answer', heldChatError({id: 'c', object: 'chat.completion', choices: [{message: {content: 'hi'}}]}), undefined)
+eq('responses body is an answer, even with error: null', heldChatError({id: 'r', object: 'response', output: [], error: null}), undefined)
+eq('responses body with an error object is still an answer', heldChatError({object: 'response', output: [], error: {code: 'x', message: 'y'}}), undefined)
+eq('messages body is an answer', heldChatError({id: 'm', type: 'message', role: 'assistant', content: [{type: 'text', text: 'hi'}]}), undefined)
+eq('no error is not a failure', [heldChatError({}), heldChatError(null), heldChatError([])], [undefined, undefined, undefined])
+
+async function heldChatOverHttp() {
+  let reply = ''
+  const srv = http.createServer((req, res) => {
+    req.resume()
+    req.on('end', () => {
+      res.writeHead(200, {'Content-Type': 'application/json', 'X-Faces-Held': '1'})
+      res.write('   ')
+      res.end(`  ${reply}`)
+    })
+  })
+  await new Promise((r) => srv.listen(0, r))
+  const client = new HwClient(`http://127.0.0.1:${srv.address().port}`, undefined, 'k')
+  try {
+    const cases = [
+      ['/v1/chat/completions', {detail: TIMEOUT, error: {message: TIMEOUT, type: 'api_error', code: '504', status: 504}}],
+      ['/v1/responses', {detail: TIMEOUT, error: {message: TIMEOUT, type: 'api_error', code: '504', status: 504}}],
+      ['/v1/messages', {type: 'error', detail: TIMEOUT, error: {type: 'api_error', message: TIMEOUT, status: 504}}],
+    ]
+    for (const [endpoint, body] of cases) {
+      reply = JSON.stringify(body)
+      let caught
+      try { await postChat(client, endpoint, {model: '@ada:maestro-1/x'}) } catch (e) { caught = e }
+      eq(`held ${endpoint}: thrown as a 504`, [caught instanceof HwAPIError, caught?.statusCode, caught?.message], [true, 504, TIMEOUT])
+      eq(`held ${endpoint}: hint`, faceRefusalHint(caught, '@ada:maestro-1/x'), 'The face did not finish within 300 seconds. Ask again.')
+    }
+    reply = JSON.stringify({object: 'chat.completion', choices: [{message: {content: 'hi'}}], usage: {total_tokens: 3}})
+    const ok = await postChat(client, '/v1/chat/completions', {model: '@ada:maestro-1/x'})
+    eq('held answer read through the spaces', [ok.data.choices[0].message.content, ok.headers['x-faces-held'], ok.headers['x-faces-cost-usd']], ['hi', '1', undefined])
+  } finally {
+    srv.close()
+  }
+}
+await heldChatOverHttp()
+
+// --- document warnings: the server's when it sends them, ours when it cannot ---
+const SERVER_SAYS = "This looks like a conversation between several speakers. To have only Ada's turns used, upload it as a thread (with face_speaker) instead of a document."
+eq('server transcript warning: its message and the thread upload, nothing else',
+  documentWarningLines({document_id: 'd1', warnings: [{code: 'looks_like_transcript', message: SERVER_SAYS}]}, interview, 'ada', 'interview.txt'), [
+    `Warning: ${SERVER_SAYS}`,
+    '  hw face:compile ada --file interview.txt --kind thread --face-speaker NAME',
+  ])
+eq('server says nothing: nothing, even for a transcript', documentWarningLines({document_id: 'd1', warnings: []}, interview, 'ada', 'interview.txt'), [])
+eq('older server (no warnings field): our own check',
+  documentWarningLines({document_id: 'd1'}, interview, 'ada', 'interview.txt'), transcriptWarningLines(interview, 'ada', 'interview.txt'))
+eq('older server, essay: nothing', documentWarningLines({document_id: 'd1'}, 'Just an essay.', 'ada'), [])
+eq('older server, no text to read: nothing', documentWarningLines({document_id: 'd1'}, undefined, 'ada', 'talk.pdf'), [])
+eq('unknown warning code: its message', documentWarningLines({warnings: [{code: 'something_new', message: 'Something to know.'}]}, interview, 'ada'), ['Warning: Something to know.'])
+eq('document warnings never use the thread wording',
+  documentWarningLines({warnings: [{code: 'looks_like_transcript', message: SERVER_SAYS}]}, interview, 'ada').some((l) => /did not become messages/.test(l)), false)
+
+eq('human body: warnings left out, the rest kept', withoutWarnings({document_id: 'd1', warnings: [{code: 'x'}]}), {document_id: 'd1'})
+
+// --- llm-costs: rows carry lab, never provider -------------------------------
+eq('llm-costs: lab read', llmCostLab({llm_model: 'gpt-5.4', lab: 'openai'}), 'openai')
+eq('llm-costs: no lab, no provider fallback', llmCostLab({llm_model: 'x', provider: 'someone'}), '')
+
+// --- conversations: premises as typed, items as read, turns as sent -----------
+eq('premise value: JSON when it is JSON', [premiseValue('50000'), premiseValue('true'), premiseValue('null'), premiseValue('["a"]'), premiseValue('{"max":3}')], [50000, true, null, ['a'], {max: 3}])
+eq('premise value: text otherwise', [premiseValue('annual'), premiseValue('Acme, Inc.'), premiseValue(''), premiseValue('  ')], ['annual', 'Acme, Inc.', '', '  '])
+eq('premise value: a quoted number stays text', premiseValue('"007"'), '007')
+eq('premise value: an infinite number stays text, never null', premiseValue('1e999'), '1e999')
+eq('premises: value split at the first =', parsePremises(['q=a=b']), [{key: 'q', value: 'a=b'}])
+eq('premises: descriptions matched by key, not position',
+  parsePremises(['a=1', 'b=false'], ['b=the vendor is certified', 'a= the budget ']),
+  [{key: 'a', value: 1, description: 'the budget'}, {key: 'b', value: false, description: 'the vendor is certified'}])
+const premiseError = (p, d) => { try { parsePremises(p, d); return undefined } catch (e) { return e.message } }
+const premiseError2 = (p, d, st, dep) => { try { parsePremises(p, d, st, dep); return '' } catch (e) { return e.message } }
+const premiseError2b = (p, roles, origins) => { try { parsePremises(p, [], [], [], roles, origins); return '' } catch (e) { return e.message } }
+eq('premises: no = is refused', /takes key=value \(got 'oops'\)/.test(premiseError(['oops'])), true)
+eq('premises: empty key is refused', /takes key=value/.test(premiseError(['=1'])), true)
+eq('premises: a key is plain text', parsePremises(['everyone can eat everything served=no', 'costs under $100?=yes', 'Resolve "can eat"=check']),
+  [{key: 'everyone can eat everything served', value: 'no'}, {key: 'costs under $100?', value: 'yes'}, {key: 'Resolve "can eat"', value: 'check'}])
+eq('premises: a key with = goes in double quotes', parsePremises(['"a=b"=yes', '"say \\"hi\\""=1']), [{key: 'a=b', value: 'yes'}, {key: 'say "hi"', value: 1}])
+eq('premises: a key is trimmed', parsePremises([' my key =1']), [{key: 'my key', value: 1}])
+eq('premises: a key on two lines is refused before sending', /plain text of 1 to 120 characters on one line/.test(premiseError(['two\nlines=1'])), true)
+eq('premises: a tab is refused', /no control characters/.test(premiseError(['a\tb=1'])), true)
+eq('premises: a 121-character key is refused', /1 to 120/.test(premiseError([`${'k'.repeat(121)}=1`])), true)
+eq('premises: a 120-character key is taken', parsePremises([`${'k'.repeat(120)}=1`]).length, 1)
+eq('premises: an old key is taken as before', parsePremises(['budget_usd-2=1']), [{key: 'budget_usd-2', value: 1}])
+eq('premises: a quoted key needs = after it', /after a quoted key comes =/.test(premiseError(['"a"b=1'])), true)
+eq('premises: a description, status and depends_on name a plain-text key',
+  parsePremises(['costs under $100?=yes', '"a=b"=1'], ['costs under $100?=the budget', '"a=b"=x'], ['costs under $100?=assumed'], ['costs under $100?="a=b"']),
+  [{key: 'costs under $100?', value: 'yes', description: 'the budget', status: 'assumed', depends_on: ['a=b']}, {key: 'a=b', value: 1, description: 'x'}])
+eq('depends_on: plain-text keys, comma separated', parseDependsOn('Resolve "can eat", costs under $100?,dec_1'), ['Resolve "can eat"', 'costs under $100?', 'dec_1'])
+eq('depends_on: a key with a comma goes in double quotes', parseDependsOn('"x, y",b, "c"'), ['x, y', 'b', 'c'])
+eq('depends_on: after a quoted key comes a comma', /after a quoted key comes a comma/.test((() => { try { parseDependsOn('"x" y'); return '' } catch (e) { return e.message } })()), true)
+eq('premises: a key twice is refused', /sets 'a' twice/.test(premiseError(['a=1', 'a=2'])), true)
+eq('premises: a description with no premise is refused', /names 'b', which no --premise sets/.test(premiseError(['a=1'], ['b=x'])), true)
+eq('premises: an empty description is refused', /is empty/.test(premiseError(['a=1'], ['a=  '])), true)
+eq('premises: two descriptions for one key are refused', /describes 'a' twice/.test(premiseError(['a=1'], ['a=x', 'a=y'])), true)
+eq('premises: none is none', parsePremises(), [])
+
+eq('turn fields: none given, nothing sent', conversationFields({}), {})
+eq('turn fields: conversation, premises and causes_visible',
+  conversationFields({conversation: 'fs_1', premise: ['a=1'], 'premise-description': ['a=x'], 'causes-visible': false}),
+  {conversation: 'fs_1', premises: [{key: 'a', value: 1, description: 'x'}], causes_visible: false})
+eq('turn fields: --session counts as the conversation', conversationFields({session: 'fs_1', premise: ['a=1']}), {premises: [{key: 'a', value: 1}]})
+eq('turn fields: the same id under both names is fine', conversationFields({conversation: 'fs_1', session: 'fs_1'}), {conversation: 'fs_1'})
+const turnError = (f) => { try { conversationFields(f); return undefined } catch (e) { return e.message } }
+eq('turn fields: two different ids are refused', /not two different ids/.test(turnError({conversation: 'fs_1', session: 'fs_2'})), true)
+eq('turn fields: premises with no conversation are refused', /belong to a state/.test(turnError({premise: ['a=1']})), true)
+eq('turn fields: causes_visible with no conversation is refused', /belong to a state/.test(turnError({'causes-visible': true})), true)
+eq('turn fields: status and depends_on go with the premise',
+  conversationFields({conversation: 'fs_1', premise: ['a=1', 'b=2'], 'premise-status': ['a=Assumed'], 'premise-depends-on': ['b=a, dec_1,a']}),
+  {conversation: 'fs_1', premises: [{key: 'a', value: 1, status: 'assumed'}, {key: 'b', value: 2, depends_on: ['a', 'dec_1']}]})
+eq('premises: depends_on= clears it', parsePremises(['a=1'], [], [], ['a=']), [{key: 'a', value: 1, depends_on: []}])
+eq('premises: role and origin', parsePremises(['a=1', 'b=2'], [], [], [], ['a=Goal'], ['a=human', 'b= tool ']),
+  [{key: 'a', value: 1, role: 'goal', origin: 'human'}, {key: 'b', value: 2, origin: 'tool'}])
+eq('premises: role= and origin= clear them', parsePremises(['a=1'], [], [], [], ['a='], ['a=']), [{key: 'a', value: 1, role: null, origin: null}])
+eq('premises: a role other than goal or test is refused', /--premise-role for 'a' is one of goal, test, or a= to clear it \(got 'wanted'\)/.test(premiseError2b(['a=1'], ['a=wanted'], [])), true)
+eq('premises: an unknown origin is refused', /--premise-origin for 'a' is one of human, agent, tool, web/.test(premiseError2b(['a=1'], [], ['a=user'])), true)
+eq('premises: a role with no premise is refused', /--premise-role names 'b', which no --premise sets/.test(premiseError2b(['a=1'], ['b=goal'], [])), true)
+eq('premises: two origins for one key are refused', /sets 'a' twice/.test(premiseError2b(['a=1'], [], ['a=human', 'a=agent'])), true)
+eq('turn fields: role and origin go with the premise',
+  conversationFields({conversation: 'fs_1', premise: ['a=1'], 'premise-role': ['a=goal'], 'premise-origin': ['a=agent']}),
+  {conversation: 'fs_1', premises: [{key: 'a', value: 1, role: 'goal', origin: 'agent'}]})
+eq('premise lines: role and origin', premiseLines({g: {value: 'ship', status: 'stated', role: 'wanted', origin: 'human'}}),
+  ['premises:', '  g = "ship"  [wanted; from human]'])
+eq('premises: an unknown status is refused', /is one of stated, verified, assumed, unresolved, invalidated \(got 'maybe'\)/.test(premiseError2(['a=1'], [], ['a=maybe'])), true)
+eq('premises: a status for no premise is refused', /names 'b', which no --premise sets/.test(premiseError2(['a=1'], [], ['b=verified'])), true)
+eq('premises: a premise resting on itself is refused', /cannot depend on itself/.test(premiseError2(['a=1'], [], [], ['a=a'])), true)
+// weighted --premise-depends-on entries
+eq('weighted depends_on: plain, or, or with p, and with p and decision',
+  parseWeightedDependsOn('a,b:or,c:or:0.7,d:and:0.5@dec_x'),
+  ['a', {id: 'b', kind: 'or'}, {id: 'c', kind: 'or', p: 0.7}, {id: 'd', kind: 'and', p: 0.5, decision: 'dec_x'}])
+eq('weighted depends_on: a quoted key takes its weight after the quote', parseWeightedDependsOn('"x, y":or:0.3, "k:or"'),
+  [{id: 'x, y', kind: 'or', p: 0.3}, 'k:or'])
+eq('weighted depends_on: a plain key with a colon stays a key', parseWeightedDependsOn('note: later,a:b'), ['note: later', 'a:b'])
+for (const [raw, says] of [['a:or:1.5', 'number from 0 to 1'], ['a:or:x', 'number from 0 to 1'], ['a@dec_1', 'a kind before its decision'],
+  ['a,a:or', 'twice'], [':or:0.5', 'needs an id'], ['"a":xor', 'is not :and or :or']]) {
+  const msg = (() => { try { parseWeightedDependsOn(raw); return '' } catch (e) { return e.message } })()
+  eq(`weighted depends_on refused: ${raw}`, msg.includes(says), true)
+}
+eq('weighted depends_on: plain duplicates fold, as before', parseWeightedDependsOn('a, a,b'), ['a', 'b'])
+eq('weighted depends_on: through --premise-depends-on', parsePremises(['task=1'], [], [], ['task=a:or:0.6,b:or:0.4']),
+  [{key: 'task', value: 1, depends_on: [{id: 'a', kind: 'or', p: 0.6}, {id: 'b', kind: 'or', p: 0.4}]}])
+eq('weighted depends_on: not on itself', /cannot depend on itself/.test((() => { try { parsePremises(['t=1'], [], [], ['t=t:or']); return '' } catch (e) { return e.message } })()), true)
+eq('premise role: test is taken', parsePremises(['t=1'], [], [], [], ['t=test'])[0].role, 'test')
+eq('premise role: rule is not', /role/.test((() => { try { parsePremises(['t=1'], [], [], [], ['t=rule']); return '' } catch (e) { return e.message } })()), true)
+eq('an edge prints with its kind and p', [entryText('a'), entryText({id: 'b', kind: 'or', p: 0.7}), entryText({id: 'c', kind: 'and', p: 0.5, decision: 'dec_1'})],
+  ['a', 'b (or 0.7)', 'c (and 0.5 by dec_1)'])
+eq('premises print their weighted edges', premiseLines({task: {value: 'ship', status: 'stated', role: 'wanted',
+  depends_on: [{id: 'a', kind: 'and', p: 0.8}, 'b']}, opt: {value: 'x', status: 'invalidated', face: 'ada', reason: 'pruned by dec_1'}}),
+['premises:', '  task = "ship"  [rests on a (and 0.8), b; wanted]', '  opt = "x"  [invalidated; proposed by @ada; pruned by dec_1]'])
+// the swarm: one item from each parallel group, heaviest first
+const SYN = {done: false, next: 'g', text: 'Next goal: g.\n- test a: write one [weight 1]',
+  outline: 'stated g [wanted]\n  stated (and) a',
+  ready: [{key: 'a', action: 'test', weight: 1, path: ['g', 'a']}, {key: 'b', action: 'test', weight: 0.5, path: ['g', 'b']},
+    {key: 'c', action: 'decide', weight: 0.5, path: ['g', 'c']}],
+  groups: [{weight: 1, items: [{key: 'a', action: 'test', weight: 1}, {key: 'b', action: 'test', weight: 0.5}]},
+    {weight: 0.5, items: [{key: 'c', action: 'decide', weight: 0.5}]}], claims: []}
+eq('state:next picks one per group', pickParallel(SYN, 5).map((f) => f.key), ['a', 'c'])
+eq('state:next takes at most N', pickParallel(SYN, 1).map((f) => f.key), ['a'])
+eq('state:next lines', nextLines(SYN, pickParallel(SYN, 2)),
+  ['1. test a   [weight 1]', '   for: g', '2. decide c   [weight 0.5]', '   for: g', '', '1 more ready item(s); 2 parallel group(s) in all.'])
+eq('state:next when all is claimed', nextLines({claims: [{id: 'clm_1', key: 'a', agent: 'w1'}], ready: [], groups: []}, []),
+  ['Nothing ready: every ready item is claimed: a (w1).'])
+eq('state:synopsis lines: the text, then the outline', synopsisLines(SYN),
+  ['Next goal: g.', '- test a: write one [weight 1]', '', 'Outline:', '  stated g [wanted]', '    stated (and) a'])
+eq('decide --weigh lines', weighLines({weigh: {written: true, premise: 'p', kind: 'or', cutoff: 0.85, decision: 'dec_1',
+  edges: [{id: 'a', p: 0.9}, {id: 'b', p: 0.1}], pruned: ['b'], side_node: 'sn_1'}}),
+['p: its or edges, weighed by dec_1', '  0.9   a', '  0.1   b   pruned', '', 'Pruned (set invalidated): the alternatives outside 0.85 of the probability.', 'side node: sn_1'])
+eq('decide --weigh when nothing was written', weighLines({weigh: {written: false, reason: 'the decision model gave no probabilities'}}),
+  ['Nothing was written: the decision model gave no probabilities.'])
+eq('depends_on: at most 200', /at most 200/.test((() => { try { parseDependsOn(Array.from({length: 201}, (_, i) => `k${i}`).join(',')); return '' } catch (e) { return e.message } })()), true)
+eq('client items: premises first, then messages', clientItems(['hi'], [{key: 'a', value: 1}]), [{key: 'a', value: 1}, {type: 'message', role: 'user', content: 'hi'}])
+
+eq('conversation lines: any face, causes hidden', conversationLines({object: 'state', id: 'fs_1', model: null, turns: 0, items: 2, causes_visible: false, status: 'open'}), [
+  'state:        fs_1', 'face:         any of your faces', 'status:       open', 'turns:        0', 'items:        2', 'causes:       each face reads its own only'])
+eq('conversation lines: one face', conversationLines({object: 'conversation', id: 'fs_1', model: 'alice', causes_visible: true})[1], 'face:         alice')
+
+const loggedItems = [
+  {id: 'ci_1', type: 'function_call', name: 'premise', call_id: 'prem_1', arguments: '{"key": "budget_usd"}'},
+  {id: 'ci_2', type: 'function_call_output', call_id: 'prem_1', output: '{"value": 50000, "description": "the most we can spend"}'},
+  {id: 'ci_3', type: 'message', role: 'user', content: 'Worth a look?'},
+  {id: 'ci_4', type: 'message', role: 'assistant', name: 'alice', model: 'gpt-x', cause: 'Money is tight.', content: [{type: 'output_text', text: 'Yes, carefully.'}]},
+  {id: 'ci_5', type: 'function_call', name: 'decision', call_id: 'dec_1', face: 'alice', model: 'jev-1', arguments: '{"id": "sign", "instructions": "Sign the contract?"}'},
+  {id: 'ci_6', type: 'function_call_output', call_id: 'dec_1', face: 'alice', model: 'jev-1', output: '{"answer": {"type": "choice", "choice": "no"}, "cause": "Not certified."}'},
+  {id: 'ci_7', type: 'function_call_output', call_id: 'prem_2', output: '{"value": "x"}'},
+  {id: 'ci_8', type: 'message', role: 'assistant', name: 'alice', cause: 'Only this.', content: ''},
+]
+eq('item lines: each message, decision and premise once, in order', itemLines(loggedItems), [
+  'ci_2   premise  budget_usd = 50000   (the most we can spend)',
+  'ci_3   you: Worth a look?',
+  'ci_4   alice (gpt-x): Yes, carefully.',
+  '       cause: Money is tight.',
+  'ci_6   alice (jev-1) decided: Sign the contract? -> no',
+  '       cause: Not certified.',
+  'ci_7   output: {"value": "x"}',
+  "ci_8   alice's cause: Only this.",
+])
+eq('item lines: a text value prints quoted, a number does not',
+  itemLines([{id: 'ci_1', type: 'function_call', name: 'premise', call_id: 'p', arguments: '{"key":"k"}'}, {id: 'ci_2', type: 'function_call_output', call_id: 'p', output: '{"value":"50000"}'}]),
+  ['ci_2   premise  k = "50000"'])
+eq('premise lines: current values', premiseLines({budget_usd: {value: 50000, description: 'the most we can spend'}, ok: {value: false, description: null}}),
+  ['premises:', '  budget_usd = 50000   (the most we can spend)', '  ok = false'])
+eq('premise lines: none', premiseLines({}), ['premises: none'])
+eq('premise lines: status, what set it and why', premiseLines({
+  rent: {value: 'no rise', description: 'rent', status: 'invalidated'},
+  afford: {value: false, status: 'invalidated', asserted_status: 'stated', because: 'rent', depends_on: ['rent']},
+  chain: {value: true, status: 'stated'}}), [
+  'premises:',
+  '  rent = "no rise"  [invalidated]   (rent)',
+  '  afford = false  [invalidated; set stated; because rent; rests on rent]',
+  '  chain = true'])
+eq('status changes: none prints nothing', [statusChangeLines([]), statusChangeLines(undefined)], [[], []])
+eq('status changes: premises and decisions', statusChangeLines([
+  {kind: 'premise', key: 'rent', from: 'assumed', to: 'invalidated', because: null},
+  {kind: 'decision', id: 'dec_1', from: 'decided', to: 'invalidated', because: 'afford'}]), [
+  '2 statuses changed:', '  premise rent: assumed -> invalidated', '  decision dec_1: decided -> invalidated (because afford)'])
+eq('item lines: an invalidated decision says so',
+  itemLines([{id: 'ci_8', type: 'decision', face: 'alice', model: 'jev-1', question: {instructions: 'Move?'}, answer: {result: 0.65}, status: 'invalidated', because: 'afford'}]),
+  ['ci_8   alice (jev-1) decided: Move? -> 0.65   [invalidated, because afford]'])
+
+// --- media: the kinds of writing, from GET /v1/media ---------------------------
+eq('media: read from data', mediaOf({object: 'list', data: [{name: 'speech'}]}), [{name: 'speech'}])
+eq('media: a bare list or nothing', [mediaOf([{name: 'poem'}]), mediaOf(null), mediaOf({data: 'x'})], [[{name: 'poem'}], [], []])
+eq('media lines: name, description, what it covers', mediaLines([
+  {name: 'speech', description: 'Spoken to an audience.', subcategories: ['keynote', 'toast']},
+  {name: 'other', description: 'None of the named forms.', subcategories: []}]), [
+  'MEDIUM  DESCRIPTION               COVERS',
+  'speech  Spoken to an audience.    keynote, toast',
+  'other   None of the named forms.'])
+eq('media lines: none', mediaLines([]), ['No media.'])
+
+// --- choices: the face's options, or the question it would ask ----------------
+eq('model: upstream alone', parseModel('@alice:maestro-1'), {upstream: '@alice:maestro-1', faces: '@alice', maestro: 'maestro-1', downstream: undefined})
+eq('model: the downstream id is verbatim after the first /', parseModel('@alice:maestro-1/google/gemma-4-31b-it').downstream, 'google/gemma-4-31b-it')
+eq('model: a downstream with its own @', parseModel('@dana~alice:maestro-1-flash/glm-5.3@rev2'), {upstream: '@dana~alice:maestro-1-flash', faces: '@dana~alice', maestro: 'maestro-1-flash', downstream: 'glm-5.3@rev2'})
+eq('model: a composite', parseModel('(@a | @b) - @c:maestro-1/gpt-5.4').faces, '(@a | @b) - @c')
+eq('model: no maestro is not ours', parseModel('@cf/meta/llama'), {downstream: '@cf/meta/llama'})
+eq('model problem: face@model shows the new form', modelProblem('alice@gpt-5.4', 'both'), 'face@model is gone: write @alice:maestro-1/gpt-5.4')
+eq('model problem: no maestro', modelProblem('@alice/gpt-5.4', 'both'), 'Name the maestro after the face: @alice:maestro-1/gpt-5.4')
+eq('model problem: a plain model', modelProblem('gpt-5.4', 'both'), 'Add a face: @<face>:maestro-1/gpt-5.4')
+eq('model problem: a bare name may be a face', modelProblem('alice', 'both'), 'Add a face: @<face>:maestro-1/alice, or, if alice is a face, @alice:maestro-1/<model>')
+eq('model problem: chat needs a downstream', /@alice:maestro-1\/<model>/.test(modelProblem('@alice:maestro-1', 'both') ?? ''), true)
+eq('model problem: choices takes the upstream alone', /no decoder after it/.test(modelProblem('@alice:maestro-1/gpt-5.4', 'upstream') ?? ''), true)
+eq('model problem: a bare face on choices', modelProblem('alice', 'upstream'), 'Write the face as @alice:maestro-1')
+eq('model problem: fine', [modelProblem('@alice:maestro-1', 'upstream'), modelProblem('(@a|@b):maestro-1-flash/jev-latest', 'both')], [undefined, undefined])
+eq('face: @ added once', [asFace('alice'), asFace('@alice'), asFace('(@a | @b)')], ['@alice', '@alice', '(@a | @b)'])
+eq('chat payload: messages', chatPayload('/v1/messages', 'm', [{role: 'user', content: 'hi'}], {stream: false, system: 's'}), {model: 'm', messages: [{role: 'user', content: 'hi'}], max_tokens: 1024, stream: false, system: 's'})
+eq('chat payload: responses', chatPayload('/v1/responses', 'm', [{role: 'user', content: 'hi'}], {stream: true, maxTokens: 50, compaction: 'c'}), {model: 'm', input: [{role: 'user', content: 'hi'}], stream: true, max_output_tokens: 50, compaction: 'c'})
+eq('chat payload: completions in a state', chatPayload('/v1/chat/completions', 'm', [{role: 'user', content: 'hi'}], {stream: false, turn: {conversation: 'fs_1'}, oauthOnly: true}), {model: 'm', messages: [{role: 'user', content: 'hi'}], stream: false, conversation: 'fs_1', oauth_only: true})
+eq('reply text by endpoint', [replyText({choices: [{message: {content: 'a'}}]}, '/v1/chat/completions'), replyText({output: [{content: [{type: 'output_text', text: 'b'}]}]}, '/v1/responses'), replyText({content: [{type: 'text', text: 'c'}]}, '/v1/messages')], ['a', 'b', 'c'])
+eq('choices lines: numbered options and usage', choicesLines({object: 'choices', model: '@alice:maestro-1',
+  choices: [{name: 'Take the offer', description: 'It pays in time.'}, {name: 'Negotiate'}], usage: {input_tokens: 1243, output_tokens: 250}}), [
+  '1. Take the offer', '   It pays in time.', '2. Negotiate', '', '@alice:maestro-1: 1,243 input, 250 output tokens'])
+eq('choices lines: in a state, each option id and the list id', choicesLines({object: 'choices', model: '@alice:maestro-1',
+  choices: [{id: 'opt_a', name: 'Take the offer'}, {id: 'opt_b', name: 'Negotiate', description: 'Ask for more.'}], choices_item: 'cho_1'}), [
+  '1. Take the offer   [opt_a]', '2. Negotiate   [opt_b]', '   Ask for more.', '',
+  'Added to the state as cho_1. Name an option id (or cho_1 for all of them) in --premise-depends-on or decide --depends-on.'])
+eq('choices lines: the question it would ask', choicesLines({object: 'choices.question', model: '@alice:maestro-1', question: 'Why?', alternatives: ['How?']}), [
+  '@alice would ask: Why?', '', 'Or:', '  - How?', '', 'Ask it with --question to get the options.'])
+eq('choices hint: a long situation goes in a state', /hw state:create[\s\S]*--state-id/.test(choicesHint(422, 'This description is 5201 tokens; version 23 reads prose of at most 3,000.', '@alice:maestro-1')), true)
+eq('choices hint: nothing compiled names the upload', choicesHint(409, '@alice has nothing compiled, so ...', '@alice:maestro-1'), 'Give it a first source: hw face:compile alice --file <file>.')
+eq('choices hint: an unknown depends_on names the listing', choicesHint(422, '`depends_on` names no premise or decision (or choices option) in this conversation: x', '@alice:maestro-1'), 'Name premise keys, decision ids and choices ids already in the state (hw state:items <id>).')
+eq('choices hint: another 422 adds nothing', choicesHint(422, '`model` is required', '@alice:maestro-1'), undefined)
+eq('conversation hint: a new premise names the flag to add',
+  conversationHint(new HwAPIError(422, "premise 'rates' is new: give its `description` (what it means, in plain words)")),
+  'Say what it means: --premise-description rates="what it means, in plain words"')
+eq('conversation hint: a new plain-text key is quoted for the shell',
+  conversationHint(new HwAPIError(422, "premise 'costs under $100?' is new: give its `description` (what it means, in plain words)")),
+  "Say what it means: --premise-description 'costs under $100?=what it means, in plain words'")
+eq('conversation hint: a key with quotes and =',
+  conversationHint(new HwAPIError(422, `premise "it's a=b" is new: give its \`description\``)),
+  `Say what it means: --premise-description '"it'\\''s a=b"=what it means, in plain words'`)
+eq('conversation hint: another 422 adds nothing', conversationHint(new HwAPIError(422, '`causes_visible` is true or false')), undefined)
+eq('stale decisions: none prints nothing', [staleDecisionLines([]), staleDecisionLines(undefined)], [[], []])
+eq('stale decisions: what changed under each', staleDecisionLines([{call_id: 'dec_1', question: {id: 'sign', instructions: 'Sign the contract?'}, choice: 'no', face: 'alice', changed: {vendor_certified: {was: true, now: false}}}]), [
+  '1 earlier decision was made under a value you just changed. Nothing was decided again:',
+  '  alice: Sign the contract? -> no   [dec_1]',
+  '    vendor_certified: was true, now false',
+])
+
+// a question option as the question itself, in each form the face writes it
+{
+  const {asked} = await import('../dist/refine.js')
+  eq('asked: the prescribed form', asked({name: 'x', description: 'Ask the human: Is there a fridge?, because only they know.'}), 'Is there a fridge?')
+  eq('asked: quoted after the lead', asked({name: 'x', description: 'Ask the human: "Is there a fridge?", because only they know.'}), 'Is there a fridge?')
+  eq('asked: quoted, no lead', asked({name: 'x', description: '"Is the host happy with the menu?", because their answer settles it.'}), 'Is the host happy with the menu?')
+  eq('asked: "Ask the human," with a comma, unclosed', asked({name: 'x', description: 'Ask the human, "What drinks are you considering?'}), 'What drinks are you considering?')
+  eq('asked: not a question, kept whole', asked({name: 'x', description: 'Confirm the budget.'}), 'Confirm the budget.')
+}
+
+// a state for state:refine, kept in memory: the loop's calls are recorded in order
+const R = {calls: [], premises: {}}
+function refineReset() {
+  R.calls = []
+  R.matches = []
+  R.sameP = 0
+  R.allFail = false
+  R.tie = false
+  R.premises = {g: {key: 'g', number: '1', value: 'Cold drinks', role: 'goal', origin: 'agent', status: 'unresolved', truth: 'open',
+    op: null, children: [], on: [], refinement: null, await: null}}
+}
+function refineStub(req, body, send) {
+  const url = req.url
+  R.calls.push({method: req.method, url, body})
+  if (url.startsWith('/v1/states/fs_r/proof') && /query=/.test(url)) return send(200, {object: 'state.proof', premises: [], matches: (R.matches ?? []).map(([key, score]) => ({key, score}))})
+  if (url.startsWith('/v1/states/fs_r/proof')) return send(200, {object: 'state.proof', premises: Object.values(R.premises), summary: []})
+  if (url.startsWith('/v1/states/fs_r/premise?')) return send(200, {object: 'state.proof', text: '[ ] 1 g  AND', matches: []})
+  if (url === '/v1/states/fs_r/premises' && req.method === 'PATCH') {
+    Object.assign(R.premises[body.key], body.refinement !== undefined ? {refinement: body.refinement} : {}, body.await ? {await: body.await} : {})
+    return send(200, {object: 'state.reply', result: 'Edited.', text: 'Edited.'})
+  }
+  if (url === '/v1/states/fs_r/premises' && req.method === 'POST') {
+    R.premises[body.key] = {key: body.key, number: null, value: body.value, role: body.role ?? null, origin: 'agent', status: 'unresolved',
+      truth: 'open', op: null, children: [], on: body.on ?? [], refinement: null, await: null}
+    if (body.and) { R.premises[body.and].children.push(body.key); R.premises[body.and].op = 'and' }
+    return send(200, {object: 'state.reply', result: 'Added.', text: 'Added.'})
+  }
+  if (url === '/v1/billing/balance') {
+    R.balance = (R.balance ?? 10) - 0.25
+    return send(200, {balance_usd: R.balance})
+  }
+  if (url === '/v1/choices' && body.options) {
+    // the server's exact state-wide link: an option that is a premise's own key and value
+    const linked = body.options.filter((o) => R.premises[o.name] && R.premises[o.name].value === o.description
+      && !R.premises[body.into].children.includes(o.name))
+    for (const o of linked) R.premises[body.into].children.push(o.name)
+    if (linked.length) {
+      return send(200, {object: 'choices.written', new: [], matched: [], linked: linked.map((o) => o.name), refused: [], usage: {input_tokens: 0, output_tokens: 0}})
+    }
+    const fresh = body.options.filter((o) => !R.premises[o.name])
+    for (const o of fresh) {
+      R.premises[o.name] = {key: o.name, number: null, value: o.description, role: null, origin: 'agent', status: 'unresolved', truth: 'open',
+        op: null, children: [], on: [], refinement: null, await: null}
+      R.premises[body.into].children.push(o.name)
+      R.premises[body.into].op = body.kind
+    }
+    return send(200, {object: 'choices.written', new: fresh.map((o) => o.name), matched: body.options.filter((o) => !fresh.includes(o)).map((o) => o.name),
+      usage: {input_tokens: 0, output_tokens: 0}})
+  }
+  if (url === '/v1/choices') {
+    const usage = {input_tokens: 10, output_tokens: 5}
+    if (/broken into the conditions/.test(body.instructions ?? '')) {
+      return send(200, {object: 'choices', usage, choices: [
+        {name: 'Chilled', description: 'It holds only if: the drinks were chilled for an hour.'},
+        {name: 'Restated', description: 'It holds only if: the drinks are cold, restated.'},
+        {name: 'Ice', description: 'It holds only if: there is ice for every glass.'}]})
+    }
+    if (/leave out a condition/.test(body.instructions ?? '')) {
+      // round 1 finds one more; round 2 re-proposes it (matched), so the loop stops
+      return send(200, {object: 'choices', usage, choices: [{name: 'Fridge', description: 'It holds only if: the fridge is on.'}]})
+    }
+    if (/Which guests/.test(body.instructions ?? '')) {
+      return send(200, {object: 'choices', usage, choices: [{name: 'Guests', description: 'the six guests and what each cannot eat'}]})
+    }
+    if (/Which dinners/.test(body.instructions ?? '')) {
+      return send(200, {object: 'choices', usage, choices: [{name: 'Vegan menu', description: 'curry, quinoa salad, mango sorbet'},
+        {name: 'Gluten-free menu', description: 'Curry, quinoa salad, mango sorbet.'}]})
+    }
+    if (/Which menus/.test(body.instructions ?? '')) {
+      return send(200, {object: 'choices', usage, choices: [
+        {name: 'Safe menu 1', description: 'curry, quinoa salad, mango sorbet'},
+        {name: 'Safe menu 2', description: 'pie, bread, brownies (with a nut crust, and more words here to run the statement well past one hundred and twenty characters'},
+        {name: 'Ask the guests', description: 'Ask each guest what they would like'}]})
+    }
+    if (/pinned to one meaning/.test(body.instructions ?? '')) {
+      return send(200, {object: 'choices', usage, choices: [{name: 'Dishes only', description: 'Take it to mean: the dishes'},
+        {name: 'With drinks', description: 'Take it to mean: the dishes and the drinks'}]})
+    }
+    if (/settled by one test/.test(body.instructions ?? '')) {
+      return send(200, {object: 'choices', usage, choices: [{name: 'T', description: `Passes only if: ${body.premise} is checked.`}]})
+    }
+    if (/settled by asking/.test(body.instructions ?? '')) {
+      return send(200, {object: 'choices', usage, choices: [{name: 'Ask', description: 'Ask the human: "Is there a fridge?", because only they know.'}]})
+    }
+    return send(200, {object: 'choices', usage, choices: []})
+  }
+  if (url === '/v1/decisions' && body.weigh) {
+    const kids = R.premises[body.weigh.premise].children
+    return send(200, {object: 'decision', usage: {input_tokens: 20, output_tokens: 1},
+      weigh: {premise: body.weigh.premise, kind: 'or', edges: kids.map((k, i) => ({id: k, p: R.tie ? 1 / kids.length : (i ? 0.1 : 0.9)})), written: true}})
+  }
+  if (url === '/v1/decisions') {
+    const usage = {input_tokens: 20, output_tokens: 1}
+    const q = body.questions ?? []
+    if (q[0]?.name === 'kind') {
+      const who = body.depends_on[0]
+      const pick = who === 'h' ? 'pin it to one meaning' : who === 'g' ? 'split it into conditions' : who === 'Fridge' ? 'ask the human' : 'one test settles it'
+      return send(200, {object: 'decision', usage, answers: [{type: 'choice', name: 'kind', choice: pick,
+        probabilities: q[0].choices.map((c) => ({value: c.value, probability: c.value === pick ? 0.8 : 0.2 / 3}))}]})
+    }
+    if (/the same condition as/.test(q[0]?.instructions ?? '')) {
+      return send(200, {object: 'decision', usage, answers: [{type: 'predicate', name: q[0].name, probability: R.sameP}]})
+    }
+    return send(200, {object: 'decision', usage, answers: q.map((x) => ({type: 'predicate', name: x.name,
+      probability: R.allFail || (/restated/.test(x.instructions) && /covers only part/.test(x.instructions)) ? 0.1 : 0.9}))})
+  }
+  return send(404, {detail: 'not in the refine stub'})
+}
+
+async function conversationsOverHttp() {
+  const seen = []
+  const srv = http.createServer((req, res) => {
+    let b = ''
+    req.on('data', (c) => { b += c })
+    req.on('end', () => {
+      const send = (status, body) => { res.writeHead(status, {'content-type': 'application/json'}); res.end(JSON.stringify(body)) }
+      const body = b ? JSON.parse(b) : undefined
+      seen.push({method: req.method, url: req.url, body, session: req.headers['x-faces-session']})
+      // the state's routes answer a state.reply (writes) or a state.proof (reads); a key
+      // 'held' is another's claim; 'late' and 'slow' are held open
+      const fm = /^\/v1\/states\/(fs_\w+)\/(premises|premise|proof|note|claim|release|release-session)(\?|$)/.exec(req.url)
+      if (fm && fm[1] === 'fs_r') return refineStub(req, body, send)
+      if (req.url === '/v1/billing/balance' && R.refining) return refineStub(req, body, send)
+      if (fm) {
+        const reply = (result) => ({object: 'state.reply', result, summary: ['Open. Proved when 1 is refined.'],
+          text: `${result}\n\nOpen. Proved when 1 is refined.`})
+        if (body?.key === 'late' || body?.key === 'slow') {
+          res.writeHead(200, {'content-type': 'application/json', 'x-faces-held': '1'})
+          res.write('   ')
+          const late = {detail: 'the face cannot be read: @gone', error: {message: 'the face cannot be read: @gone', type: 'invalid_request_error', param: null, code: '409', status: 409}}
+          return setTimeout(() => res.end(JSON.stringify(body.key === 'late' ? late : reply('added slowly'))), 50)
+        }
+        if (body?.key === 'held') return send(409, {object: 'state.reply', error: 'Not written: "held" is claimed by w9 until 13:00', text: 'Not written: "held" is claimed by w9 until 13:00'})
+        if (fm[2] === 'proof' || fm[2] === 'premise') {
+          const fmt = new URL(req.url, 'http://x').searchParams.get('format')
+          if (fmt === 'json') return send(200, {object: 'state.proof', premises: [], summary: ['The state is empty.']})
+          return send(200, {object: 'state.proof', format: fmt, text: `[ ] 1 g (not refined)\n\nOpen. Proved when 1 is refined.`})
+        }
+        return send(200, reply(`did ${req.method} ${fm[2]} on ${fm[1]}`))
+      }
+      if (body?.state_id === 'fs_r' || body?.conversation === 'fs_r') return refineStub(req, body, send)
+      const conv = {object: 'conversation', id: 'fs_1', model: body?.model ?? null, turns: 0, items: body?.items?.length ?? 0, causes_visible: body?.causes_visible ?? true, status: 'open'}
+      if (req.url === '/v1/states' && req.method === 'POST') return send(200, conv)
+      if (req.url === '/v1/states/gone') return send(404, {detail: 'no such conversation, or it has expired'})
+      if (req.url === '/v1/states/any/compact') {
+        if (!body?.model) return send(422, {detail: 'this conversation takes any face: name the one to compact in `model`'})
+        return send(200, {object: 'cause.compaction', compaction_id: 'fcmp_1', turns: 2})
+      }
+      if (req.url === '/v1/states/fs_1/items' && req.method === 'POST') {
+        return send(200, {object: 'list', data: [], premises: {vendor_certified: {value: false, description: 'certified', status: 'invalidated'}},
+          decisions_made_under_old_values: [{call_id: 'dec_1', question: {instructions: 'Sign?'}, choice: 'no', face: 'alice', changed: {vendor_certified: {was: true, now: false}}}],
+          status_changes: [{kind: 'premise', key: 'vendor_certified', from: 'stated', to: 'invalidated', because: null}]})
+      }
+      if (req.url === '/v1/states/fs_1' && req.method === 'DELETE') return send(200, {id: 'fs_1', object: 'conversation.deleted', deleted: true})
+      if (req.url === '/v1/choices' && body?.into) {
+        return send(200, {object: 'choices', model: body.model, choices: [{id: 'opt_1', name: 'Strict', description: 'Refuse.', premise: 'Strict'},
+          {id: 'opt_2', name: 'fast', description: 'Quick.', premise: 'fast (p)'}], choices_item: 'cho_1',
+        into: {premise: body.into, kind: body.kind ?? 'or', side_node: 'sn_1'}, usage: {input_tokens: 5, output_tokens: 2}})
+      }
+      if (req.url === '/v1/decisions' && body?.weigh) {
+        return send(200, {object: 'decision', answers: [{type: 'choice', name: 'weigh', probabilities: [{value: 'a', probability: 0.9}, {value: 'b', probability: 0.1}]}],
+          decision_ids: {weigh: 'dec_1'}, weigh: {premise: body.weigh.premise, kind: 'or', cutoff: body.weigh.cutoff ?? 0.85,
+            edges: [{id: 'a', p: 0.9}, {id: 'b', p: 0.1}], pruned: ['b'], side_node: 'sn_2', written: true, decision: 'dec_1'}})
+      }
+      if (req.url.startsWith('/v1/states/fs_1/synopsis')) {
+        return send(200, {object: 'state.synopsis', done: false, next: 'g', text: 'Next goal: g.', outline: 'stated g [wanted]',
+          ready: [{key: 'a', action: 'test', weight: 1}, {key: 'taken', action: 'test', weight: 0.5}, {key: 'c', action: 'decide', weight: 0.4}],
+          groups: [{items: [{key: 'a', action: 'test'}]}, {items: [{key: 'taken', action: 'test'}]}, {items: [{key: 'c', action: 'decide'}]}], claims: []})
+      }
+      if (req.url === '/v1/states/fs_1/claims' && req.method === 'POST') {
+        if (body?.key === 'taken') return send(409, {detail: "'taken' is claimed by w9 until 2026-11-21T13:00:00+00:00"})
+        return send(200, {object: 'claim', id: `clm_${body.key}`, key: body.key, agent: body.agent, since: 'now', expires_at: 'later'})
+      }
+      if (req.url === '/v1/states/fs_1/claims/clm_a' && req.method === 'DELETE') return send(200, {object: 'claim.deleted', id: 'clm_a', deleted: true})
+      if (req.url === '/v1/states/fs_1/claims/clm_x' && req.method === 'DELETE') return send(404, {detail: "no claim 'clm_x' holds on this state"})
+      if (req.url === '/v1/choices') {
+        if (body?.model === '@bare:maestro-1') return send(409, {detail: '@bare has nothing compiled, so version 23 has nothing to propose from. Compile a source for it. Nothing was charged.'})
+        if (!body?.instructions) return send(200, {object: 'choices.question', model: body?.model, question: 'Why?', alternatives: [], usage: {input_tokens: 5, output_tokens: 2}})
+        return send(200, {object: 'choices', model: body?.model, choices: [{name: 'Go', description: 'Now.'}], usage: {input_tokens: 5, output_tokens: 2}})
+      }
+      if (req.url === '/v1/systemone') return send(200, {model: '@alice:maestro-1/jev-latest', answers: {move: {probability: 0.6}}, decision_ids: {move: 'dec_9'}})
+      if (req.url === '/v1/media') return send(200, {object: 'list', data: [{object: 'medium', name: 'speech', description: 'Spoken to an audience.', subcategories: ['keynote']}]})
+      if (req.url.startsWith('/v1/models')) return send(200, {data: []})
+      if (req.url === '/v1/chat/completions') return send(200, {object: 'chat.completion', choices: [{message: {content: 'ok'}}]})
+      send(404, {detail: 'not here'})
+    })
+  })
+  await new Promise((r) => srv.listen(0, r))
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'faces-check-'))
+  const env = {...process.env, HOME: home, HW_BASE_URL: `http://127.0.0.1:${srv.address().port}`, HW_API_KEY: 'sk-check'}
+  const run = (args) => new Promise((r) => {
+    const child = execFile(process.execPath, ['bin/run.js', ...args], {env}, (err, stdout, stderr) => r({code: err?.code ?? 0, out: stdout + stderr}))
+    child.stdin.end()
+  })
+  const last = (url) => seen.filter((s) => s.url === url).at(-1)?.body
+  const runIn = (cwd, args, extra = {}) => new Promise((r) => {
+    const child = execFile(process.execPath, [path.resolve('bin/run.js'), ...args], {env: {...env, ...extra}, cwd}, (err, stdout, stderr) => r({code: err?.code ?? 0, out: stdout + stderr, stdout}))
+    child.stdin.end()
+  })
+  try {
+    let r = await run(['state:append', 'fs_1', '--premise', 'vendor_certified=false'])
+    eq('state:append: sent as items', last('/v1/states/fs_1/items'), {items: [{key: 'vendor_certified', value: false}]})
+    eq('state:append: decisions under old values, readably',
+      [/1 earlier decision was made under a value you just changed/.test(r.out), /alice: Sign\? -> no/.test(r.out), /vendor_certified: was true, now false/.test(r.out)], [true, true, true])
+    seen.length = 0
+    r = await run(['state:append', 'fs_1'])
+    eq('state:append: nothing to add is refused before sending', [r.code, seen.length], [2, 0])
+    r = await run(['state:append', 'fs_1', ...Array.from({length: 21}, (_, i) => ['-m', `m${i}`]).flat()])
+    eq('state:append: more than 20 is refused before sending', [r.code, /At most 20/.test(r.out), seen.length], [2, true, 0])
+    r = await run(['state:compact', 'any'])
+    eq('state:compact: any-face 422 says to name the face', /hw state:compact any @<face>/.test(r.out), true)
+    r = await run(['state:compact', 'any', 'alice'])
+    eq('state:compact: the face is sent', last('/v1/states/any/compact'), {model: '@alice'})
+    eq('state:compact: no cause printed, the next step is chat', [/Position/.test(r.out), /hw maestro:thread @alice:maestro-1\/<model> --compaction fcmp_1/.test(r.out)], [false, true])
+    r = await run(['state:close', 'fs_1', '--yes', '--json'])
+    eq('state:close: the server\'s answer', JSON.parse(r.out).deleted, true)
+
+    await run(['maestro:chat', '--face', 'alice', '--decoder', 'gpt-x', '-m', 'one', '--json'])
+    eq('maestro:chat: --face and --decoder make the model', [last('/v1/chat/completions').model, 'conversation' in last('/v1/chat/completions')], ['@alice:maestro-1/gpt-x', false])
+    await run(['maestro:chat', '--face', '@dana~alice', '--flash', '--decoder', 'gpt-x', '-m', 'one', '--json'])
+    eq('maestro:chat: --flash picks maestro-1-flash', last('/v1/chat/completions').model, '@dana~alice:maestro-1-flash/gpt-x')
+    await run(['maestro:chat', '--face', '@alice:maestro-1/gpt-x', '-m', 'one', '--json'])
+    eq('maestro:chat: the full model string is accepted', last('/v1/chat/completions').model, '@alice:maestro-1/gpt-x')
+    seen.length = 0
+    r = await run(['maestro:chat', '--face', 'alice', '-m', 'one'])
+    eq('maestro:chat: no decoder is refused before sending', [r.code, /--decoder/.test(r.out), seen.length], [2, true, 0])
+    r = await run(['maestro:chat', '--face', '@alice:maestro-1/gpt-x', '--flash', '-m', 'one'])
+    eq('maestro:chat: --flash on a full model is refused', [r.code, /drop --flash/.test(r.out), seen.length], [2, true, 0])
+    r = await run(['maestro:chat', '--face', 'alice', '--decoder', 'gpt-x', '-m', 'one', '--conversation', 'fs_1'])
+    eq('maestro:chat: stateless, --conversation is gone', [r.code !== 0, /Nonexistent flag/i.test(r.out), seen.length], [true, true, 0])
+    r = await run(['maestro:chat', '--face', 'alice', '--decoder', 'gpt-x', '-m', 'one', '--style', 'email'])
+    eq('maestro:chat: --style is gone', [r.code !== 0, /Nonexistent flag/i.test(r.out)], [true, true])
+    let t = await run(['maestro:thread', '@alice:maestro-1/gpt-x', '-m', 'first', '--json'])
+    const tid = JSON.parse(t.out).thread_id
+    await run(['maestro:thread', '--id', tid, '-m', 'second', '--json'])
+    eq('thread: without a state, the whole thread is sent', last('/v1/chat/completions').messages.map((m) => m.content), ['first', 'ok', 'second'])
+    await run(['maestro:thread', '--id', tid, '-m', 'third', '--conversation', 'fs_1', '--premise', 'a=2', '--json'])
+    const sent = last('/v1/chat/completions')
+    eq('thread: in a state, only the new message', [sent.messages.map((m) => m.content), sent.conversation, sent.premises, sent.model], [['third'], 'fs_1', [{key: 'a', value: 2}], '@alice:maestro-1/gpt-x'])
+    t = spawnSync(process.execPath, ['bin/run.js', 'maestro:thread', '--id', '../config', '--delete'], {env: {...process.env, HOME: home}, encoding: 'utf8'})
+    eq('thread id: a path is refused', t.status !== 0, true)
+
+    r = await run(['state:append', 'fs_1', '--premise', 'vendor_certified=false', '--premise-status', 'vendor_certified=invalidated'])
+    eq('state:append: status sent with the premise', last('/v1/states/fs_1/items'), {items: [{key: 'vendor_certified', value: false, status: 'invalidated'}]})
+    eq('state:append: status changes printed', /1 status changed:\n\s+premise vendor_certified: stated -> invalidated/.test(r.out), true)
+
+    await run(['maestro:choices', '--face', 'alice', '--state', 'A chain opened.', '-q', 'What now?', '--max-choices', '3'])
+    eq('maestro:choices: model, state, question and max sent', last('/v1/choices'), {model: '@alice:maestro-1', state: 'A chain opened.', instructions: 'What now?', max_choices: 3})
+    r = await run(['maestro:choices', '--face', '@alice', '--flash', '--state', 'x'])
+    eq('maestro:choices: --flash, no question', last('/v1/choices'), {model: '@alice:maestro-1-flash', state: 'x'})
+    eq('maestro:choices: the question it would ask is printed', /@alice would ask: Why\?/.test(r.out), true)
+    await run(['maestro:choices', '--face', '@alice:maestro-1-flash', '--state', 'x'])
+    eq('maestro:choices: the full model string is accepted', last('/v1/choices').model, '@alice:maestro-1-flash')
+    seen.length = 0
+    r = await run(['maestro:choices', '--face', 'alice'])
+    eq('maestro:choices: no situation is refused before sending', [r.code, /Describe the situation/.test(r.out), seen.length], [2, true, 0])
+    r = await run(['maestro:choices', '--face', '@alice:maestro-1/gpt-x', '--state', 'x'])
+    eq('maestro:choices: a decoder is refused before sending', [r.code, /no decoder/.test(r.out), seen.length], [2, true, 0])
+    r = await run(['maestro:choices', '--face', 'alice', '--state-id', 'fs_1'])
+    eq('maestro:choices: stateless, --state-id is gone', [r.code !== 0, /Nonexistent flag/i.test(r.out), seen.length], [true, true, 0])
+    r = await run(['maestro:choices', '--face', 'alice', '--state', 'x', '--model', 'maestro-1-flash'])
+    eq('maestro:choices: --model is gone', [r.code !== 0, seen.length], [true, 0])
+    r = await run(['maestro:choices', '--face', '@bare', '--state', 'x', '-q', 'y'])
+    eq('maestro:choices: 409 names the upload', /HTTP 409[\s\S]*hw face:compile bare --file/.test(r.out), true)
+
+    r = await run(['maestro:decide', '--face', 'alice', '--state', 'Lease.', '--question', 'Move?'])
+    eq('maestro:decide: the decoder defaults to jev-latest', last('/v1/systemone').model, '@alice:maestro-1/jev-latest')
+    eq('maestro:decide: no state fields sent', ['conversation', 'depends_on'].some((k) => k in last('/v1/systemone')), false)
+    eq('maestro:decide: decision ids printed', /decision id \(move\): dec_9/.test(r.out), true)
+    await run(['maestro:decide', '--face', 'alice', '--flash', '--decoder', 'clef', '--state', 'Lease.', '--question', 'Move?'])
+    eq('maestro:decide: --flash and --decoder', last('/v1/systemone').model, '@alice:maestro-1-flash/clef')
+    await run(['maestro:decide', '--face', '@alice:maestro-1/clef', '--state', 'Lease.', '--question', 'Move?'])
+    eq('maestro:decide: the full model string is accepted', last('/v1/systemone').model, '@alice:maestro-1/clef')
+    seen.length = 0
+    for (const gone of [['--conversation', 'fs_1'], ['--depends-on', 'afford'], ['--weigh', 'p']]) {
+      r = await run(['maestro:decide', '--face', 'alice', '--state', 'Lease.', '--question', 'Move?', ...gone])
+      eq(`maestro:decide: stateless, ${gone[0]} is gone`, [r.code !== 0, /Nonexistent flag/i.test(r.out)], [true, true])
+    }
+    eq('maestro:decide: the removed flags send nothing', seen.filter((x) => x.url === '/v1/systemone' || x.url === '/v1/decisions').length, 0)
+    r = await run(['media:list'])
+    eq('media:list: a table', [/MEDIUM\s+DESCRIPTION\s+COVERS/.test(r.out), /speech\s+Spoken to an audience\.\s+keynote/.test(r.out)], [true, true])
+    r = await run(['media:list', '--json'])
+    eq('media:list --json: the list', JSON.parse(r.out).data.map((m) => m.name), ['speech'])
+    r = await run(['maestro:decide', '--face', 'alice:maestro', '--state', 'Lease.', '--question', 'Move?'])
+    eq('maestro:decide: a broken face is refused before sending', [r.code, /--face/.test(r.out)], [2, true])
+    r = await run(['maestro:decide', '--face', 'alice', '--state', 'Lease.'])
+    eq('maestro:decide: a question is needed', [r.code, /Ask at least one question/.test(r.out)], [2, true])
+    // the state's commands print the server's text as it is; the state is .headwaters/state
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'faces-state-'))
+    r = await runIn(dir, ['state:get'])
+    eq('state:get with no state here is refused before sending', [r.code !== 0, /No state here/.test(r.out)], [true, true])
+    r = await runIn(dir, ['state:create', '--use'])
+    eq('state:create --use: writes .headwaters/state and prints the proof', [fs.readFileSync(path.join(dir, '.headwaters', 'state'), 'utf8').trim(),
+      /^Created an empty state, fs_1\./.test(r.out), /Open\. Proved when 1 is refined\./.test(r.out)], ['fs_1', true, true])
+    // state:create is the new surface only; its help names no face and no premise flags
+    r = await runIn(dir, ['state:create', '--help'])
+    eq('state:create --help: the new surface only', [r.code, /--use/.test(r.out), /--local/.test(r.out),
+      /--premise|\[FACE\]|formerly|--message|--causes-visible|budget_usd/.test(r.out)], [0, true, true, false])
+    r = await runIn(dir, ['state:create', 'alice'])
+    eq('state:create: a face argument is refused', r.code !== 0, true)
+    const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'faces-state-'))
+    r = await runIn(dir2, ['state:create'])
+    eq('state:create without --use: the id and how to use it, no file written', [r.code, /^Created an empty state, fs_1\. hw state:use fs_1/.test(r.out),
+      fs.existsSync(path.join(dir2, '.headwaters'))], [0, true, false])
+    // in --jsonl, `on` is a JSON array or a comma list (read as --on reads it)
+    const jl = path.join(dir, 'p.jsonl')
+    fs.writeFileSync(jl, JSON.stringify({key: 'x', value: 'X', on: 'a, "b, c",d'}) + '\n' + JSON.stringify({key: 'y', value: 'Y', on: ['a', 'b, c']}) + '\n')
+    seen.length = 0
+    r = await runIn(dir, ['state:add', '--jsonl', jl])
+    const posted = seen.filter((x) => x.url === '/v1/states/fs_1/premises').map((x) => x.body.on)
+    eq('state:add --jsonl: on as a comma list is split; as an array it is kept', [r.code, posted], [0, [['a', 'b, c', 'd'], ['a', 'b, c']]])
+    fs.writeFileSync(jl, JSON.stringify({key: 'z', value: 'Z', on: '"a"x'}) + '\n')
+    seen.length = 0
+    r = await runIn(dir, ['state:add', '--jsonl', jl])
+    eq('state:add --jsonl: a bad on list is refused before sending, naming the line', [r.code !== 0, /line 1/.test(r.out), seen.length], [true, true, 0])
+    fs.mkdirSync(path.join(dir, 'sub'))
+    r = await runIn(path.join(dir, 'sub'), ['state:add', 'the dinner', 'Dinner for six', '--role', 'goal', '--said', 'Plan a dinner.',
+      '--and', 'g', '--on', 'a,"b, c"', '--as', 'lead'], {HW_SESSION: 'check:1'})
+    eq('premise:add: the body, the session header, the text verbatim', [last('/v1/states/fs_1/premises'), seen.at(-1).session, r.stdout],
+      [{key: 'the dinner', value: 'Dinner for six', and: 'g', on: ['a', 'b, c'], role: 'goal', said: 'Plan a dinner.', as: 'lead'}, 'check:1',
+        'did POST premises on fs_1\n\nOpen. Proved when 1 is refined.\n'])
+    r = await runIn(dir, ['state:add', 'x', '1', '--and', 'a', '--or', 'b'])
+    eq('premise:add: --and and --or together are refused', r.code !== 0, true)
+    r = await runIn(dir, ['state:add', 'held', 'x'])
+    eq('a refusal: exit 1, the reply on stderr', [r.code, r.stdout, /claimed by w9/.test(r.out)], [1, '', true])
+    fs.writeFileSync(path.join(dir, '.headwaters', 'state.local'), 'fs_2\n')
+    await runIn(dir, ['state:get', '--query', 'drinks'])
+    eq('state:get: .headwaters/state.local overrides .headwaters/state; --query', seen.at(-1).url, '/v1/states/fs_2/proof?format=text&query=drinks')
+    fs.rmSync(path.join(dir, '.headwaters', 'state.local'))
+    await runIn(dir, ['state:get', '--problog'])
+    eq('state:get --problog', seen.at(-1).url, '/v1/states/fs_1/proof?format=problog')
+    r = await runIn(dir, ['state:get', '--json'])
+    eq('state:get --json: the raw fields', [seen.at(-1).url, JSON.parse(r.out).object], ['/v1/states/fs_1/proof?format=json', 'state.proof'])
+    await runIn(dir, ['state:get', 'g', '--depth', '2', '--up'])
+    eq('state:get --depth --up', seen.at(-1).url, '/v1/states/fs_1/premise?key=g&format=text&depth=2&up=true')
+    await runIn(dir, ['state:edit', 't', '--status', 'verified', '--tested', 'Menu 2', '--evidence', 'ok', '--as', 'b1'])
+    eq('premise:edit: a test run', [seen.at(-1).method, last('/v1/states/fs_1/premises')],
+      ['PATCH', {key: 't', status: 'verified', tested: 'Menu 2', evidence: 'ok', as: 'b1'}])
+    await runIn(dir, ['state:edit', 'the menu', '--key', 'what we serve', '--value', '"x"', '--await', 'none', '--on', ''])
+    eq('premise:edit: rename, value, await, inputs cleared', last('/v1/states/fs_1/premises'),
+      {key: 'the menu', value: 'x', to: 'what we serve', await: 'none', on: []})
+    await runIn(dir, ['state:delete', 'old', '--as', 'b1'])
+    eq('state:delete', [seen.at(-1).method, seen.at(-1).url], ['DELETE', '/v1/states/fs_1/premises?key=old&as=b1'])
+    await runIn(dir, ['state:claim', 'the menu', 'builder-A', '--ttl', '600'])
+    eq('state:claim', last('/v1/states/fs_1/claim'), {key: 'the menu', agent: 'builder-A', ttl_seconds: 600})
+    await runIn(dir, ['state:claim', 'the menu', '--release'])
+    eq('state:claim --release', last('/v1/states/fs_1/release'), {key: 'the menu'})
+    await runIn(dir, ['state:claim', '--release', '--session', 'check:1'])
+    eq('state:claim --release --session: the session-end route', last('/v1/states/fs_1/release-session'), {session: 'check:1'})
+    r = await runIn(dir, ['state:claim', 'the menu'])
+    eq('state:claim needs who', [r.code !== 0, /Name who claims it/.test(r.out)], [true, true])
+    r = await runIn(dir, ['state:add', 'late', 'x'])
+    eq('a held refusal (200, X-Faces-Held, held_error): exit 1, its message on stderr', [r.code, r.stdout, /the face cannot be read: @gone/.test(r.out)], [1, '', true])
+    r = await runIn(dir, ['state:add', 'late', 'x', '--json'])
+    eq('a held refusal in --json: exit 1, the real status', [r.code, JSON.parse(r.out).error], [1, {message: 'the face cannot be read: @gone', status: 409}])
+    r = await runIn(dir, ['state:add', 'slow', 'x'])
+    eq('a held reply is the reply', [r.code, /^added slowly\n/.test(r.stdout)], [0, true])
+    for (const gone of ['premise:await', 'premise:answer', 'premise:verify', 'premise:rename', 'premise:withdraw', 'premise:bug',
+      'state:brief', 'state:say', 'state:chat', 'state:next', 'state:synopsis', 'state:claim', 'state:release', 'state:choices', 'state:decide']) {
+      r = await runIn(dir, [gone, 'x'])
+      eq(`${gone} is gone`, r.code !== 0, true)
+    }
+    // the refine loop: the judges run BEFORE the options are written, so the restatement
+    // the gate drops is never sent; the gap check sees the state; a sub-goal only the human can
+    // settle awaits them with a question for them; the refinement is recorded
+    refineReset()
+    r = await runIn(dir, ['state:refine', 'g', '--face', 'cook', '--state-id', 'fs_r', '--as', 'lead'])
+    const writes = R.calls.filter((c) => c.url === '/v1/choices' && c.body.options)
+    const firstJudge = R.calls.findIndex((c) => c.url === '/v1/decisions' && c.body.questions?.[0]?.type === 'predicate')
+    const firstWrite = R.calls.findIndex((c) => c.url === '/v1/choices' && c.body.options)
+    eq('refine: exit 0', r.code, 0)
+    eq('refine: the needs decision first, on decisions, with the face and jev-latest', [R.calls[1].url, R.calls[1].body.model, R.calls[1].body.questions[0].name],
+      ['/v1/decisions', '@cook:maestro-1/jev-latest', 'kind'])
+    eq('refine: the conditions prompt asks with the premise view (its children hidden)', [R.calls[2].body.premise, 'depends_on' in R.calls[2].body], ['g', false])
+    eq('refine: the judges run on clef before anything is written', [firstJudge < firstWrite, R.calls[firstJudge].body.model], [true, '@cook:maestro-1/clef'])
+    eq('refine: only what passed both judges is written, named by the face\'s own name for it, the lead off',
+      writes[0].body.options, [{name: 'Chilled', description: 'the drinks were chilled for an hour.'},
+        {name: 'Ice', description: 'there is ice for every glass.'}])
+    eq('refine: writes carry as and kind and', [writes[0].body.as, writes[0].body.kind, writes[0].body.into], ['lead', 'and', 'g'])
+    const gapAsk = R.calls.find((c) => c.url === '/v1/choices' && /leave out/.test(c.body.instructions ?? ''))
+    eq('refine: the gap check sees the state around g', [gapAsk.body.depends_on, 'premise' in gapAsk.body, gapAsk.body.max_choices], [['g'], false, 4])
+    eq('refine: the gap check adds the fridge, then stops when it is re-proposed', Object.keys(R.premises).sort(),
+      ['Chilled', 'Fridge', 'Ice', 'g'])
+    eq('refine: the fridge awaits the human, with its question as a note',
+      [R.premises['Fridge'].await, R.calls.find((c) => c.method === 'PATCH' && c.body.key === 'Fridge')?.body.note],
+      ['human', 'Is there a fridge?'])
+    eq('refine: the refinement is recorded complete', R.premises.g.refinement, 'complete')
+    eq('refine: the refinement is marked as refine\'s, not by hand',
+      R.calls.filter((c) => c.method === 'PATCH' && c.body.refinement !== undefined).map((c) => c.body.refined_by), ['refine'])
+    eq('refine: it reports the judges and counts the billed calls',
+      [/The face proposed 3 condition\(s\); 2 passed both judges\. Not written: "Restated"\./.test(r.out),
+        /\d+ billed call\(s\)/.test(r.out)], [true, true])
+    // nothing passes both judges: no refinement is recorded, and none is called sufficient
+    refineReset()
+    R.allFail = true
+    r = await runIn(dir, ['state:refine', 'g', '--face', 'cook', '--state-id', 'fs_r'])
+    eq('refine: nothing kept, nothing recorded', [r.code, R.premises.g.refinement, /has no refinement; nothing was recorded/.test(r.out),
+      /sufficient/.test(r.out)], [0, null, true, false])
+    // the recheck: a rewritten goal's sub-goals are checked again; only the agent's own leaves are cut
+    refineReset()
+    Object.assign(R.premises.g, {op: 'and', refinement: 'incomplete', children: ['mine', 'said', 'a test']})
+    const leaf = (k, more) => ({key: k, number: null, value: k, role: null, origin: 'agent', status: 'unresolved', truth: 'open', op: null,
+      children: [], on: [], refinement: null, await: null, messages: [], ...more})
+    R.premises.mine = leaf('mine')
+    R.premises.said = leaf('said', {messages: [{kind: 'said', author: 'human'}]})
+    R.premises['a test'] = leaf('a test', {role: 'test'})
+    r = await runIn(dir, ['state:refine', 'g', '--face', 'cook', '--state-id', 'fs_r'])
+    const rc = R.calls.find((c) => c.url === '/v1/decisions' && /was rewritten/.test(c.body.questions?.[0]?.instructions ?? ''))
+    eq('refine recheck: only the agent\'s own leaf is checked again', [r.code, rc?.body.questions.length, /"mine: mine"/.test(rc?.body.questions[0].instructions)], [0, 1, true])
+    // -r: breadth first; the AND children are refined (each into one test); the fridge stops on its
+    // await; it ends with the calls, the dollars the balance moved by, and the awaits
+    refineReset()
+    R.refining = true
+    r = await runIn(dir, ['state:refine', 'g', '--face', 'cook', '--state-id', 'fs_r', '-r'])
+    R.refining = false
+    const kinds = R.calls.filter((c) => c.body?.questions?.[0]?.name === 'kind').map((c) => c.body.depends_on[0])
+    eq('refine -r: g first, then its children breadth first', kinds.slice(0, 1), ['g'])
+    eq('refine -r: each child refined into one test', ['Chilled', 'Ice']
+      .map((k) => R.premises[k].children.length === 1 && R.premises[R.premises[k].children[0]].role === 'test'), [true, true])
+    eq('refine -r: the last line; every branch ended before depth 3, so no limit is named',
+      [r.code, /Refined 3 premise\(s\): \d+ billed call\(s\), \$0\.2500 spent, 1 branch\(es\) stopped on an await \("Fridge"\)\./.test(r.out), /Stopped at depth/.test(r.out)],
+      [0, true, false])
+    refineReset()
+    R.refining = true
+    r = await runIn(dir, ['state:refine', 'g', '--face', 'cook', '--state-id', 'fs_r', '-r', '--depth', '1'])
+    R.refining = false
+    eq('refine -r --depth 1: only g is refined, and the depth limit is named with what it left',
+      [r.code, /Refined 1 premise\(s\)/.test(r.out),
+        /Stopped at depth 1; 2 premise\(s\) below it are not refined \("Chilled", "Ice"\)\. Run again with --depth 2, or --depth all for no limit\./.test(r.out)],
+      [0, true, true])
+    refineReset()
+    R.refining = true
+    r = await runIn(dir, ['state:refine', 'g', '--face', 'cook', '--state-id', 'fs_r', '-r', '--depth', 'all'])
+    R.refining = false
+    eq('refine -r --depth all: every branch ends, so no limit is named', [r.code, /Refined 3 premise\(s\)/.test(r.out), /Stopped at depth/.test(r.out)], [0, true, false])
+    r = await runIn(dir, ['state:refine', 'g', '--face', 'cook', '--state-id', 'fs_r', '-r', '--depth', '0'])
+    eq('refine -r --depth 0 is refused', [r.code !== 0, /whole number from 1, or all/.test(r.out)], [true, true])
+    // state:choices keys each candidate by what it says, the face's label only when it says nothing
+    refineReset()
+    r = await runIn(dir, ['state:choices', 'g', '--face', 'cook', '--state-id', 'fs_r', '--question', 'Which menus?'])
+    eq('choices: a shared label keys by content (cut at a word, no open parenthesis); a name of its own is kept',
+      [r.code, R.calls.find((c) => c.body?.options)?.body.options.map((o) => o.name)],
+      [0, ['curry, quinoa salad, mango sorbet', 'pie, bread, brownies', 'Ask the guests']])
+    eq('choices: the refinement is marked as state:choices\', not by hand',
+      R.calls.filter((c) => c.method === 'PATCH' && c.body.refinement !== undefined).map((c) => [c.body.key, c.body.refinement, c.body.refined_by]),
+      [['g', 'complete', 'choices']])
+    refineReset()
+    r = await runIn(dir, ['state:choices', 'g', '--face', 'cook', '--state-id', 'fs_r', '--question', 'Which dinners?'])
+    eq('choices: two names for the same statement are one candidate', [r.code, R.calls.filter((c) => c.body?.options).map((c) => c.body.options.map((o) => o.name))],
+      [0, [['Vegan menu']]])
+    // state-wide near matches go to a billed same-condition decision before linking:
+    // a true pair links (fs_5bDT's 0.878), a false pair at a higher cosine does not (0.879)
+    for (const [score, p, links] of [[0.878, 0.9, true], [0.879, 0.1, false]]) {
+      refineReset()
+      Object.assign(R.premises.g, {op: 'and'})
+      R.premises.h = {key: 'h', number: null, value: 'the other branch', role: 'goal', origin: 'agent', status: 'unresolved', truth: 'open', op: 'and',
+        children: ['Guest list'], on: [], refinement: 'complete', await: null}
+      R.premises['Guest list'] = {key: 'Guest list', number: null, value: 'the six guests and their needs', role: null, origin: 'agent', status: 'unresolved',
+        truth: 'open', op: null, children: [], on: [], refinement: null, await: null}
+      R.matches = [['Guest list', score]]
+      R.sameP = p
+      r = await runIn(dir, ['state:refine', 'h', '--face', 'cook', '--state-id', 'fs_r'])
+      refineReset()
+      Object.assign(R.premises.g, {op: 'or'})
+      R.premises['Guest list'] = {key: 'Guest list', number: null, value: 'the six guests and their needs', role: null, origin: 'agent', status: 'unresolved',
+        truth: 'open', op: null, children: [], on: [], refinement: null, await: null}
+      R.matches = [['Guest list', score]]
+      R.sameP = p
+      r = await runIn(dir, ['state:choices', 'g', '--face', 'cook', '--state-id', 'fs_r', '--question', 'Which guests?'])
+      const sent = R.calls.find((c) => c.body?.options)?.body.options
+      const asked = R.calls.find((c) => /the same condition as/.test(c.body?.questions?.[0]?.instructions ?? ''))
+      eq(`same condition at ${score} (p ${p}): ${links ? 'linked' : 'written as new'}`,
+        [r.code, Boolean(asked), asked?.body.model, sent?.[0], R.premises.g.children.includes('Guest list')],
+        [0, true, '@cook:maestro-1/clef', links ? {name: 'Guest list', description: 'the six guests and their needs'}
+          : {name: 'Guests', description: 'the six guests and what each cannot eat'}, links])
+      eq(`same condition at ${score}: the reply ${links ? 'says it linked, with the p' : 'says nothing of a link'}`,
+        /"Guest list" already exists; linked it under "g" \(the same condition, p 0\.9\)/.test(r.out), links)
+    }
+    eq('choices: the question asks for a short name', /Name each option by what it is, in a few words/.test(R.calls.find((c) => c.url === '/v1/choices' && c.body.premise)?.body.instructions ?? ''), true)
+    // state:decide only ranks: a tie leaves the premise open and not waiting; refine's meanings wait on the human
+    refineReset()
+    R.tie = true
+    Object.assign(R.premises.g, {op: 'or', children: ['a', 'b']})
+    R.premises.a = {key: 'a', number: null, value: 'a', role: null, origin: 'agent', status: 'unresolved', truth: 'open', op: null, children: [], on: [], refinement: null, await: null}
+    R.premises.b = {...R.premises.a, key: 'b', value: 'b'}
+    r = await runIn(dir, ['state:decide', 'g', '--face', 'cook', '--state-id', 'fs_r'])
+    eq('decide: a tie ranks and never awaits', [r.code, R.premises.g.await, /awaits/.test(r.out)], [0, null, false])
+    refineReset()
+    R.tie = true
+    R.premises.h = {key: 'h', number: null, value: 'what it means', role: null, origin: 'agent', status: 'unresolved', truth: 'open', op: null, children: [], on: [], refinement: null, await: null}
+    r = await runIn(dir, ['state:refine', 'h', '--face', 'cook', '--state-id', 'fs_r'])
+    eq('refine: a tie between meanings awaits the human', [r.code, R.premises.h.await, /only the human can settle which is meant/.test(r.out)], [0, 'human', true])
+    // a test or a fact is refused before any call
+    refineReset()
+    R.premises.g.role = 'test'
+    r = await runIn(dir, ['state:refine', 'g', '--face', 'cook', '--state-id', 'fs_r'])
+    eq('refine: a test is refused, nothing billed', [r.code, R.calls.filter((c) => c.url === '/v1/choices' || c.url === '/v1/decisions').length], [1, 0])
+    fs.rmSync(dir, {recursive: true, force: true})
+  } finally {
+    srv.close()
+    fs.rmSync(home, {recursive: true, force: true})
+  }
+}
+await conversationsOverHttp()
+
+// --- the clean start: no faces command name, no FACES_ variable, product:verb -----
+// hw replaces the faces CLI with no aliases, so an old name anywhere a person or an
+// agent reads it is a bug: in the source, the README, or any command's help.
+async function cleanStart() {
+  const OLD_COMMAND = /\bfaces\s+(?:[a-z][a-z-]*:[a-z]|choices\b|decide\b|auth\b|face\b)/
+  const OLD_VAR = /\bFACES_[A-Z_]+/
+  const OLD_PLACES = /~\/\.faces\b|['"`]\.faces['"`]|\.faces\/state|@faces-sh\/|github\.com\/faces-sh\//
+  const OLD_TOPICS = ['compile', 'chat', 'premise', 'conversation', 'session', 'style', 'fidelity', 'benchmark']
+  const files = ['README.md', 'package.json']
+  const walk = (d) => { for (const e of fs.readdirSync(d, {withFileTypes: true})) { const f = path.join(d, e.name); if (e.isDirectory()) walk(f); else if (f.endsWith('.ts')) files.push(f) } }
+  walk('src')
+  const hits = []
+  for (const f of files) {
+    fs.readFileSync(f, 'utf8').split('\n').forEach((line, i) => {
+      for (const re of [OLD_COMMAND, OLD_VAR, OLD_PLACES]) if (re.test(line)) hits.push(`${f}:${i + 1}: ${line.trim().slice(0, 120)}`)
+    })
+  }
+  eq('clean start: no faces command, FACES_ variable or ~/.faces in the source or README', hits, [])
+
+  const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'))
+  eq('clean start: the package and its binary', [pkg.name, Object.keys(pkg.bin), pkg.oclif.bin, pkg.oclif.dirname], ['@headwaters-ai/cli', ['hw'], 'hw', 'headwaters'])
+  eq('clean start: no old topic', Object.keys(pkg.oclif.topics).filter((t) => OLD_TOPICS.includes(t.split(':')[0])), [])
+
+  const {Config} = await import('@oclif/core')
+  const config = await Config.load(path.resolve('.'))
+  const ids = config.commands.map((c) => c.id).sort()
+  eq('clean start: every command is product:verb, none under an old topic',
+    ids.filter((id) => id !== 'help' && (!id.includes(':') || OLD_TOPICS.includes(id.split(':')[0]))), [])
+  for (const id of ['face:create', 'face:list', 'face:compile', 'face:publish', 'face:share', 'face:edit', 'face:delete',
+    'maestro:choices', 'maestro:decide', 'maestro:chat',
+    'state:create', 'state:use', 'state:get', 'state:add', 'state:edit', 'state:delete', 'state:claim', 'state:refine', 'state:choices', 'state:decide',
+    'auth:login', 'keys:create']) {
+    if (!ids.includes(id)) eq(`clean start: ${id} exists`, false, true)
+  }
+  const helpHits = []
+  for (const c of config.commands) {
+    const cmd = await c.load()
+    const text = [cmd.summary, cmd.description, ...(cmd.examples ?? []).map(String),
+      ...Object.values(cmd.flags ?? {}).map((f) => `${f.description ?? ''} ${f.env ?? ''}`),
+      ...Object.values(cmd.args ?? {}).map((a) => a.description ?? '')].join('\n')
+    for (const re of [OLD_COMMAND, OLD_VAR, OLD_PLACES]) if (re.test(text)) helpHits.push(`${c.id}: ${re.exec(text)[0]}`)
+  }
+  eq('clean start: no command\'s help names a faces command, a FACES_ variable or ~/.faces', helpHits, [])
+  const envs = config.commands.flatMap((c) => Object.values(c.flags ?? {}).map((f) => f.env).filter(Boolean))
+  eq('clean start: the env vars are HW_', [...new Set(envs)].filter((e) => !e.startsWith('HW_')), [])
+}
+await cleanStart()
+
+console.log(`${ran - failed}/${ran} checks passed`)
+if (failed > 0) process.exit(1)

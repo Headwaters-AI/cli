@@ -1,0 +1,129 @@
+{
+  "name": "@headwaters-ai/cli",
+  "version": "1.3.0",
+  "description": "hw: the Headwaters CLI. Compile faces from source texts, ask them what they would do with Maestro, and build states",
+  "type": "module",
+  "author": "Headwaters Lab Inc.",
+  "license": "MIT",
+  "homepage": "https://github.com/Headwaters-AI/cli",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Headwaters-AI/cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Headwaters-AI/cli/issues"
+  },
+  "bin": {
+    "hw": "./bin/run.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.json",
+    "postpack": "rm -f oclif.manifest.json",
+    "prepack": "npm run build && oclif manifest && oclif readme",
+    "dev": "tsx src/index.ts",
+    "check": "npm run build && node scripts/check.mjs"
+  },
+  "dependencies": {
+    "@oclif/core": "^4",
+    "@oclif/plugin-help": "^6",
+    "@toon-format/toon": "^4.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "oclif": "^4",
+    "tsx": "^4",
+    "typescript": "^5"
+  },
+  "oclif": {
+    "bin": "hw",
+    "dirname": "headwaters",
+    "commands": "./dist/commands",
+    "plugins": [
+      "@oclif/plugin-help"
+    ],
+    "topics": {
+      "auth": {
+        "description": "Login, logout, register, and identity"
+      },
+      "face": {
+        "description": "Faces: create, compile, list, share, publish and manage them"
+      },
+      "face:compile": {
+        "description": "Compile source material into a face: documents and threads"
+      },
+      "face:doc": {
+        "description": "A face's documents: create, compile, edit, pause, reset and delete"
+      },
+      "face:thread": {
+        "description": "A face's threads: create, compile, edit, replace, pause, reset and delete"
+      },
+      "face:avatar": {
+        "description": "A face's picture: list, get, make, upload and delete"
+      },
+      "face:tag": {
+        "description": "Tags on a face"
+      },
+      "face:style": {
+        "description": "Build and manage a face's styles"
+      },
+      "face:fidelity": {
+        "description": "Fidelity runs: start, turn, pick, read and save"
+      },
+      "face:benchmark": {
+        "description": "Compare a face against a reference model on its own material"
+      },
+      "maestro": {
+        "description": "Maestro, stateless: choices, decide and chat. --face @owner~face; maestro-1 by default, --flash for maestro-1-flash"
+      },
+      "state": {
+        "description": "States: the proof in progress your agent builds, kept on the server: goals, their refinement, tests and claims. Every node is a premise, named by its key. state:create --use makes one for this directory"
+      },
+      "group": {
+        "description": "Groups of faces that work together"
+      },
+      "group:tag": {
+        "description": "Tags on a group"
+      },
+      "keys": {
+        "description": "Manage API keys (JWT required)"
+      },
+      "billing": {
+        "description": "Credits, subscription, and usage"
+      },
+      "billing:card": {
+        "description": "Saved payment cards"
+      },
+      "billing:subscription": {
+        "description": "Your plan: show, subscribe, switch and cancel"
+      },
+      "account": {
+        "description": "Account-level operations"
+      },
+      "catalog": {
+        "description": "Local face catalog management"
+      },
+      "config": {
+        "description": "Local CLI configuration"
+      },
+      "models": {
+        "description": "The models you can name, with their prices"
+      },
+      "user": {
+        "description": "Other users: profiles, followers and following"
+      }
+    }
+  },
+  "files": [
+    "/bin",
+    "/dist",
+    "/oclif.manifest.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
