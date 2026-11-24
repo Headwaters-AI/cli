@@ -4,7 +4,7 @@
  * `model` is the upstream model over the downstream one, `@alice:maestro-1/gpt-5.4`:
  * the face steers, and the downstream model writes the reply. The endpoint is
  * picked from the downstream model's entry in the catalog, unless the command
- * forces one. Shared by maestro:chat (--messages, --responses) and maestro:thread.
+ * forces one. Used by maestro:chat (--messages, --responses, --thread).
  */
 import {Flags} from '@oclif/core'
 import {HwAPIError, HwClient, type ResponseWithHeaders} from './client.js'

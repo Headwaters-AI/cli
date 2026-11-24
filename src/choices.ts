@@ -74,12 +74,12 @@ export function choicesLines(data: ChoicesResponse): string[] {
 export function choicesHint(status: number, message: string, model: string): string | undefined {
   const face = (parseModel(model).faces ?? model).replace(/^@/, '').replace('~', ':')
   if (status === 422 && /at most 3,000/.test(message)) {
-    return 'Put the situation in a state, one premise per fact (hw state:create, then hw state:append), and pass --state-id.'
+    return 'Put the situation in a state, one premise per fact (hw state:create --use, then hw state:add), and ask with hw state:choices.'
   }
   if (status === 409 && /nothing compiled/i.test(message)) return `Give it a first source: hw face:compile ${face} --file <file>.`
   if (status === 409 && /compiled before/i.test(message)) return `Recompile one of its sources (list them with: hw face:sources ${face}).`
   if (status === 422 && /depends_on` names no premise or decision/.test(message)) {
-    return 'Name premise keys, decision ids and choices ids already in the state (hw state:items <id>).'
+    return 'Name premise keys, decision ids and choices ids already in the state (hw state:items).'
   }
   if (status === 404 && /state/i.test(message)) return 'A state expires 30 days after it was last used. Start another with: hw state:create'
   return undefined

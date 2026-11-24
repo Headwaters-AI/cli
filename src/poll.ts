@@ -45,6 +45,24 @@ export interface PollOptions {
   fullOnFinish?: boolean
 }
 
+/**
+ * Waiting ran out while the compile was still queued or running. The compile goes on
+ * on the server; only this command stopped waiting for it.
+ */
+export class CompileWaitTimeout extends Error {
+  constructor(readonly seconds: number, readonly lastStatus: string | null) {
+    super(`Compile timed out after ${seconds}s`)
+    this.name = 'CompileWaitTimeout'
+  }
+}
+
+/** What to tell a person when waiting ran out: it is not done, it is not lost, and how to check. */
+export function waitTimeoutMessage(err: CompileWaitTimeout, kind: 'doc' | 'thread', id: string): string {
+  const where = err.lastStatus === 'queued' ? 'still queued' : 'still running'
+  return `Stopped waiting after ${err.seconds}s: the compile is ${where} on the server and goes on without this command. ` +
+    `Check on it with: hw face:${kind}:get ${id} (or hw face:compile:status), or wait longer with --timeout.`
+}
+
 /** One progress line for a person: "queued", or "compiling, 43%". */
 export function progressLine(p: PollProgress): string {
   return compileProgressLabel(p)
@@ -74,10 +92,11 @@ export async function pollCompileProgress(
   const endpoint = base.includes('?') ? `${base}&status_only=true` : `${base}?status_only=true`
 
   let lastLine = ''
+  let lastStatus: string | null = null
 
   while (true) {
     if (Date.now() > deadline) {
-      throw new Error(`Compile timed out after ${Math.round(timeout / 1000)}s`)
+      throw new CompileWaitTimeout(Math.round(timeout / 1000), lastStatus)
     }
 
     await sleep(interval)
@@ -100,6 +119,7 @@ export async function pollCompileProgress(
 
     // Only when what a person would read has changed, so a long wait in the
     // queue is one "queued" line rather than one every three seconds.
+    lastStatus = progress.status
     const line = progressLine(progress)
     if (line !== lastLine) {
       lastLine = line

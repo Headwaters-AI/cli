@@ -1703,9 +1703,9 @@ eq('choices lines: in a state, each option id and the list id', choicesLines({ob
   'Added to the state as cho_1. Name an option id (or cho_1 for all of them) in --premise-depends-on or decide --depends-on.'])
 eq('choices lines: the question it would ask', choicesLines({object: 'choices.question', model: '@alice:maestro-1', question: 'Why?', alternatives: ['How?']}), [
   '@alice would ask: Why?', '', 'Or:', '  - How?', '', 'Ask it with --question to get the options.'])
-eq('choices hint: a long situation goes in a state', /hw state:create[\s\S]*--state-id/.test(choicesHint(422, 'This description is 5201 tokens; version 23 reads prose of at most 3,000.', '@alice:maestro-1')), true)
+eq('choices hint: a long situation goes in a state', /hw state:create --use[\s\S]*hw state:choices/.test(choicesHint(422, 'This description is 5201 tokens; version 23 reads prose of at most 3,000.', '@alice:maestro-1')), true)
 eq('choices hint: nothing compiled names the upload', choicesHint(409, '@alice has nothing compiled, so ...', '@alice:maestro-1'), 'Give it a first source: hw face:compile alice --file <file>.')
-eq('choices hint: an unknown depends_on names the listing', choicesHint(422, '`depends_on` names no premise or decision (or choices option) in this conversation: x', '@alice:maestro-1'), 'Name premise keys, decision ids and choices ids already in the state (hw state:items <id>).')
+eq('choices hint: an unknown depends_on names the listing', choicesHint(422, '`depends_on` names no premise or decision (or choices option) in this conversation: x', '@alice:maestro-1'), 'Name premise keys, decision ids and choices ids already in the state (hw state:items).')
 eq('choices hint: another 422 adds nothing', choicesHint(422, '`model` is required', '@alice:maestro-1'), undefined)
 eq('conversation hint: a new premise names the flag to add',
   conversationHint(new HwAPIError(422, "premise 'rates' is new: give its `description` (what it means, in plain words)")),
@@ -1934,22 +1934,24 @@ async function conversationsOverHttp() {
     child.stdin.end()
   })
   try {
-    let r = await run(['state:append', 'fs_1', '--premise', 'vendor_certified=false'])
-    eq('state:append: sent as items', last('/v1/states/fs_1/items'), {items: [{key: 'vendor_certified', value: false}]})
-    eq('state:append: decisions under old values, readably',
-      [/1 earlier decision was made under a value you just changed/.test(r.out), /alice: Sign\? -> no/.test(r.out), /vendor_certified: was true, now false/.test(r.out)], [true, true, true])
-    seen.length = 0
-    r = await run(['state:append', 'fs_1'])
-    eq('state:append: nothing to add is refused before sending', [r.code, seen.length], [2, 0])
-    r = await run(['state:append', 'fs_1', ...Array.from({length: 21}, (_, i) => ['-m', `m${i}`]).flat()])
-    eq('state:append: more than 20 is refused before sending', [r.code, /At most 20/.test(r.out), seen.length], [2, true, 0])
-    r = await run(['state:compact', 'any'])
-    eq('state:compact: any-face 422 says to name the face', /hw state:compact any @<face>/.test(r.out), true)
-    r = await run(['state:compact', 'any', 'alice'])
-    eq('state:compact: the face is sent', last('/v1/states/any/compact'), {model: '@alice'})
-    eq('state:compact: no cause printed, the next step is chat', [/Position/.test(r.out), /hw maestro:thread @alice:maestro-1\/<model> --compaction fcmp_1/.test(r.out)], [false, true])
-    r = await run(['state:close', 'fs_1', '--yes', '--json'])
-    eq('state:close: the server\'s answer', JSON.parse(r.out).deleted, true)
+    let r = await run(['state:append', '--state-id', 'fs_1', '--premise', 'a=1'])
+    eq('state:append is gone: state:add --jsonl and state:edit --note cover it', [r.code !== 0, /not found/i.test(r.out)], [true, true])
+    // state:items, state:compact and state:close use the directory's state, like every state: command
+    const sdir = fs.mkdtempSync(path.join(os.tmpdir(), 'hw-state-'))
+    r = await runIn(sdir, ['state:items'])
+    eq('state:items: no state here is refused before sending', [r.code !== 0, /No state here/.test(r.out)], [true, true])
+    fs.mkdirSync(path.join(sdir, '.headwaters'))
+    fs.writeFileSync(path.join(sdir, '.headwaters', 'state'), 'any\n')
+    r = await runIn(sdir, ['state:compact'])
+    eq('state:compact: the directory\'s state; any-face 422 says to name the face', /hw state:compact @<face>/.test(r.out), true)
+    r = await runIn(sdir, ['state:compact', 'alice'])
+    eq('state:compact: the face is sent to the directory\'s state', last('/v1/states/any/compact'), {model: '@alice'})
+    eq('state:compact: no cause printed, the id is', [/Position/.test(r.out), /compaction: fcmp_1/.test(r.out)], [false, true])
+    r = await runIn(sdir, ['state:close', '--yes', '--json'], {HW_STATE_ID: 'fs_1'})
+    eq('state:close: HW_STATE_ID over the directory, and the server\'s answer', JSON.parse(r.stdout).deleted, true)
+    r = await runIn(sdir, ['state:close', '--state-id', 'fs_1', '--yes', '--json'])
+    eq('state:close --state-id', JSON.parse(r.stdout).deleted, true)
+    fs.rmSync(sdir, {recursive: true, force: true})
 
     await run(['maestro:chat', '--face', 'alice', '--decoder', 'gpt-x', '-m', 'one', '--json'])
     eq('maestro:chat: --face and --decoder make the model', [last('/v1/chat/completions').model, 'conversation' in last('/v1/chat/completions')], ['@alice:maestro-1/gpt-x', false])
@@ -1966,19 +1968,28 @@ async function conversationsOverHttp() {
     eq('maestro:chat: stateless, --conversation is gone', [r.code !== 0, /Nonexistent flag/i.test(r.out), seen.length], [true, true, 0])
     r = await run(['maestro:chat', '--face', 'alice', '--decoder', 'gpt-x', '-m', 'one', '--style', 'email'])
     eq('maestro:chat: --style is gone', [r.code !== 0, /Nonexistent flag/i.test(r.out)], [true, true])
-    let t = await run(['maestro:thread', '@alice:maestro-1/gpt-x', '-m', 'first', '--json'])
-    const tid = JSON.parse(t.out).thread_id
-    await run(['maestro:thread', '--id', tid, '-m', 'second', '--json'])
-    eq('thread: without a state, the whole thread is sent', last('/v1/chat/completions').messages.map((m) => m.content), ['first', 'ok', 'second'])
-    await run(['maestro:thread', '--id', tid, '-m', 'third', '--conversation', 'fs_1', '--premise', 'a=2', '--json'])
+    // a named thread: maestro:chat --thread
+    let t = await run(['maestro:chat', '--face', 'alice', '--decoder', 'gpt-x', '--thread', 'offer', '-m', 'first', '--json'])
+    eq('thread: started with its name', JSON.parse(t.out).thread, 'offer')
+    await run(['maestro:chat', '--thread', 'offer', '-m', 'second', '--json'])
     const sent = last('/v1/chat/completions')
-    eq('thread: in a state, only the new message', [sent.messages.map((m) => m.content), sent.conversation, sent.premises, sent.model], [['third'], 'fs_1', [{key: 'a', value: 2}], '@alice:maestro-1/gpt-x'])
-    t = spawnSync(process.execPath, ['bin/run.js', 'maestro:thread', '--id', '../config', '--delete'], {env: {...process.env, HOME: home}, encoding: 'utf8'})
-    eq('thread id: a path is refused', t.status !== 0, true)
+    eq('thread: going on sends the whole thread, with its model', [sent.messages.map((m) => m.content), sent.model], [['first', 'ok', 'second'], '@alice:maestro-1/gpt-x'])
+    seen.length = 0
+    t = await run(['maestro:chat', '--thread', 'new-one', '-m', 'hi'])
+    eq('thread: a new one needs --face, refused before sending', [t.code !== 0, /--face and --decoder/.test(t.out), seen.length], [true, true, 0])
+    t = await run(['maestro:chat', '--threads'])
+    eq('thread: --threads lists it', /offer\s+@alice:maestro-1\/gpt-x\s+\(4 turns/.test(t.out), true)
+    t = await run(['maestro:chat', '--thread', 'offer', '--show'])
+    eq('thread: --show', [/Thread offer/.test(t.out), /second/.test(t.out)], [true, true])
+    t = await run(['maestro:chat', '--show'])
+    eq('thread: --show needs --thread', t.code !== 0, true)
+    t = spawnSync(process.execPath, ['bin/run.js', 'maestro:chat', '--thread', '../config', '--delete', '--yes'], {env: {...process.env, HOME: home}, encoding: 'utf8'})
+    eq('thread name: a path is refused', [t.status !== 0, /cannot name a thread/.test(t.stderr)], [true, true])
+    t = await run(['maestro:chat', '--thread', 'offer', '--delete', '--yes'])
+    eq('thread: --delete removes it', [t.code, fs.existsSync(path.join(home, '.headwaters', 'threads', 'offer.json'))], [0, false])
+    t = await run(['maestro:thread', '--list'])
+    eq('maestro:thread is gone: maestro:chat --thread', [t.code !== 0, /not found/i.test(t.out)], [true, true])
 
-    r = await run(['state:append', 'fs_1', '--premise', 'vendor_certified=false', '--premise-status', 'vendor_certified=invalidated'])
-    eq('state:append: status sent with the premise', last('/v1/states/fs_1/items'), {items: [{key: 'vendor_certified', value: false, status: 'invalidated'}]})
-    eq('state:append: status changes printed', /1 status changed:\n\s+premise vendor_certified: stated -> invalidated/.test(r.out), true)
 
     await run(['maestro:choices', '--face', 'alice', '--state', 'A chain opened.', '-q', 'What now?', '--max-choices', '3'])
     eq('maestro:choices: model, state, question and max sent', last('/v1/choices'), {model: '@alice:maestro-1', state: 'A chain opened.', instructions: 'What now?', max_choices: 3})
@@ -2238,6 +2249,48 @@ async function conversationsOverHttp() {
   }
 }
 await conversationsOverHttp()
+
+// --- face:compile: a wait that runs out is a failure, and says the compile goes on --------
+async function compileWaitTimeout() {
+  const srv = http.createServer((req, res) => {
+    let b = ''
+    req.on('data', (c) => { b += c })
+    req.on('end', () => {
+      const send = (status, body) => { res.writeHead(status, {'content-type': 'application/json'}); res.end(JSON.stringify(body)) }
+      if (req.method === 'POST' && req.url === '/v1/compile/documents') return send(200, {document_id: 'doc_1', token_count: 100})
+      if (req.method === 'POST' && req.url.startsWith('/v1/faces/ada/upload')) return send(200, {thread_id: 'thr_1', status: 'ready', message_count: 2})
+      if (req.method === 'POST' && /\/make$/.test(req.url)) return send(200, {status: 'queued', starts_at: null, rush: true})
+      if (req.method === 'GET' && /^\/v1\/compile\/(documents|threads)\//.test(req.url)) return send(200, {status: 'queued', progress: 0})
+      send(404, {detail: 'not here'})
+    })
+  })
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r))
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hw-check-'))
+  const env = {...process.env, HOME: home, HW_BASE_URL: `http://127.0.0.1:${srv.address().port}`, HW_API_KEY: 'sk-check'}
+  const run = (args) => new Promise((r) => {
+    const child = execFile(process.execPath, ['bin/run.js', ...args], {env}, (err, stdout, stderr) => r({code: err?.code ?? 0, out: stdout + stderr}))
+    child.stdin.end()
+  })
+  const file = path.join(home, 'essay.txt')
+  fs.writeFileSync(file, 'I cook for people because a table is where everyone slows down at once.\n')
+  const talk = path.join(home, 'talk.txt')
+  fs.writeFileSync(talk, 'Host: Why cook?\nAda: Because a table slows everyone down.\n')
+  try {
+    let r = await run(['face:compile', 'ada', '--file', file, '--medium', 'essay', '--timeout', '1'])
+    eq('face:compile doc: a timed-out wait exits non-zero', r.code !== 0, true)
+    eq('face:compile doc: it says the compile is still queued and how to check',
+      [/still queued on the server and goes on without this command/.test(r.out), /hw face:doc:get doc_1/.test(r.out), /\nDone\./.test(r.out)], [true, true, false])
+    r = await run(['face:compile', 'ada', '--file', file, '--medium', 'essay', '--timeout', '1', '--json'])
+    eq('face:compile doc --json: non-zero, and the reason is in the result', [r.code !== 0, /still queued/.test(r.out)], [true, true])
+    r = await run(['face:compile', 'ada', '--file', talk, '--kind', 'thread', '--face-speaker', 'Ada', '--timeout', '1'])
+    eq('face:compile thread: a timed-out wait exits non-zero and names the thread',
+      [r.code !== 0, /still queued on the server/.test(r.out.replace(/\s*\n\s*›\s*/g, ' ')), /hw face:thread:get thr_1/.test(r.out.replace(/\s*\n\s*›\s*/g, ' '))], [true, true, true])
+  } finally {
+    srv.close()
+    fs.rmSync(home, {recursive: true, force: true})
+  }
+}
+await compileWaitTimeout()
 
 // --- the clean start: no faces command name, no FACES_ variable, product:verb -----
 // hw replaces the faces CLI with no aliases, so an old name anywhere a person or an

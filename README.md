@@ -69,13 +69,12 @@ hw face:tag:add / list / remove / set / all
 
 hw maestro:choices                # what a face would do: its options, or the question it would ask
 hw maestro:decide                 # what a face would decide: yes/no, a choice, or a score
-hw maestro:chat                   # chat with a face on any chat model
-hw maestro:thread                 # a multi-turn chat kept on this machine
+hw maestro:chat                   # chat with a face on any chat model; --thread <name> keeps a multi-turn chat
 
 hw state:create --use / use / get # a state for this directory (.headwaters/state) and its proof
 hw state:add / edit / delete / claim
 hw state:refine / choices / decide # billed: refine a premise with a face, its candidates, their ranking
-hw state:append / items / compact / close   # the older premise-list commands, still served
+hw state:items / compact / close  # a state's items in order, a face's compaction of it, closing it
 
 hw models:list                    # the models you can name; --kind takes a list, or all
 hw media:list                     # the media a document can be, with what each covers
@@ -175,14 +174,15 @@ hw maestro:decide --face @alice --decoder clef --state-file situation.txt --ques
 
 `hw maestro:chat` sends your message to a face: the face steers, and the decoder writes the
 reply. It picks `/v1/chat/completions`, `/v1/responses` or `/v1/messages` from the model catalog;
-`--responses` and `--messages` force one. `hw maestro:thread` keeps a multi-turn conversation
-under `~/.headwaters/threads`.
+`--responses` and `--messages` force one. `--thread <name>` keeps a multi-turn conversation
+under `~/.headwaters/threads`: the first call starts it with `--face` and `--decoder`, later calls
+go on with it (`--threads` lists them, `--show` and `--delete` act on one).
 
 ```bash
 hw maestro:chat --face @alice --decoder gpt-5.4 -m "What matters most to you in your work?"
 hw maestro:chat --face "(@socrates | @nietzsche)" --decoder claude-sonnet-4-6 -m "What is virtue?"
-hw maestro:thread @alice:maestro-1/gpt-5.4 -m "Should I take the offer?"
-hw maestro:thread --id t_THREAD_ID -m "And if they raise the salary?"
+hw maestro:chat --face @alice --decoder gpt-5.4 --thread offer -m "Should I take the offer?"
+hw maestro:chat --thread offer -m "And if they raise the salary?"
 ```
 
 The face's style is chosen for each request, from the face's built styles. `face:style:*` builds them.
@@ -221,8 +221,10 @@ Several agents can work one state: `state:claim "<key>" <name>` gives a branch t
 and writes into it by anyone else are refused until it is released (`--release`) or expires.
 Every write takes `--as <name>`.
 
-The older premise-list commands (`state:append --premise`, `state:items`, `state:compact`,
-`state:close`) still work.
+`state:add --jsonl <file>` adds many premises at once, and `state:edit --note` adds a note to one.
+`state:items` lists a state's items in order, `state:compact` writes a face's compaction of it, and
+`state:close` closes it. Like every `state:*` command, they work on this directory's state unless
+`--state-id` names another.
 
 ## Authentication
 

@@ -1,29 +1,27 @@
-import {Args} from '@oclif/core'
 import {BaseCommand} from '../../base.js'
+import {ReplyCommand, stateIdFlag} from '../../foreman.js'
 import {HwAPIError} from '../../client.js'
 import {CONVERSATIONS_PATH, PremiseState, conversationHint, itemLines, premiseLines} from '../../conversation.js'
 import {seg} from '../../utils.js'
 
-export default class ConversationItems extends BaseCommand {
+export default class StateItems extends ReplyCommand {
   static description =
     'List a state\'s items in order: premises, decisions with their choice, cause and status, your messages ' +
     'and each face\'s reply. Ends with the premises in force now, each with its status. Free.'
 
   static examples = [
-    '<%= config.bin %> <%= command.id %> fs_STATE_ID',
-    '<%= config.bin %> <%= command.id %> fs_STATE_ID --json',
+    '<%= config.bin %> <%= command.id %>',
+    '<%= config.bin %> <%= command.id %> --json',
   ]
 
   static flags = {
     ...BaseCommand.baseFlags,
-  }
-
-  static args = {
-    conversation_id: Args.string({description: 'State id (from state:create)', required: true}),
+    ...stateIdFlag,
   }
 
   async run(): Promise<unknown> {
-    const {args, flags} = await this.parse(ConversationItems)
+    const {flags} = await this.parse(StateItems)
+    const stateId = this.stateId(flags)
     const client = this.makeClient(flags)
 
     type Page = {data?: Array<Record<string, unknown>>; premises?: Record<string, PremiseState>; has_more?: boolean; last_id?: string}
@@ -34,7 +32,7 @@ export default class ConversationItems extends BaseCommand {
       let after = ''
       for (;;) {
         const page = (await client.get(
-          `${CONVERSATIONS_PATH}/${seg(args.conversation_id)}/items?order=asc&limit=100${after ? `&after=${encodeURIComponent(after)}` : ''}`,
+          `${CONVERSATIONS_PATH}/${seg(stateId)}/items?order=asc&limit=100${after ? `&after=${encodeURIComponent(after)}` : ''}`,
         )) as Page
         all.push(...(page.data ?? []))
         premises = page.premises ?? premises

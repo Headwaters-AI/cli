@@ -4,7 +4,7 @@ import path from 'node:path'
 import {BaseCommand} from './base.js'
 import {MEDIUM_MISSING_MESSAGE, MEDIUM_REQUIRED_DESCRIPTION, RUSH_FLAG_DESCRIPTION, compileCostNote, compileRate, compileStatusOf, makeRefusalMessage, makeScheduleLines, seg, readTextFile, documentWarningLines} from './utils.js'
 import {HwAPIError} from './client.js'
-import {pollCompileProgress, PollProgress, progressLine} from './poll.js'
+import {CompileWaitTimeout, pollCompileProgress, PollProgress, progressLine, waitTimeoutMessage} from './poll.js'
 
 /** One input source, resolved to text before anything is sent. */
 interface Source {
@@ -206,12 +206,15 @@ export default class CompileDoc extends BaseCommand {
         if (hit) hit.compiled = result
       } catch (err) {
         const hit = results.find((r) => r.document_id === s.docId)
-        if (hit) hit.error = err instanceof Error ? err.message : String(err)
-        if (!json) process.stderr.write(`${s.source.name}: ${err instanceof Error ? err.message : String(err)}\n`)
+        const message = err instanceof CompileWaitTimeout ? waitTimeoutMessage(err, 'doc', s.docId) : err instanceof Error ? err.message : String(err)
+        if (hit) hit.error = message
+        if (!json) process.stderr.write(`${s.source.name}: ${message}\n`)
+        // Not compiled yet, or not at all: the command did not do what it said, so it must not exit 0.
+        process.exitCode = 1
       }
     }
 
-    if (!json) process.stderr.write('Done.\n')
+    if (!json) process.stderr.write(process.exitCode ? 'Not every document finished compiling; see above.\n' : 'Done.\n')
     return this.shape(results)
   }
 

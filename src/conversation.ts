@@ -196,7 +196,7 @@ export function conversationHint(err: HwAPIError): string | undefined {
     return `Say what it means: --premise-description ${shellWord(`${keyArg(key)}=what it means, in plain words`)}`
   }
   if (err.statusCode === 422 && /depends_on` names no premise or decision/.test(err.message)) {
-    return 'Name premise keys, decision ids and option ids already in the state (hw state:items <id>), or premises set in the same request.'
+    return 'Name premise keys, decision ids and option ids already in the state (hw state:items), or premises set in the same request.'
   }
   return undefined
 }

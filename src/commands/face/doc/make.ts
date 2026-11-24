@@ -1,7 +1,7 @@
 import {Args, Flags} from '@oclif/core'
 import {BaseCommand} from '../../../base.js'
 import {HwAPIError} from '../../../client.js'
-import {pollCompileProgress, PollProgress, progressLine} from '../../../poll.js'
+import {CompileWaitTimeout, pollCompileProgress, PollProgress, progressLine, waitTimeoutMessage} from '../../../poll.js'
 import {compileCostNote, compileRate, compileStatusOf, makeRefusalMessage, makeScheduleLines, msUntilStart, RUSH_FLAG_DESCRIPTION, seg} from '../../../utils.js'
 
 export default class CompileDocMake extends BaseCommand {
@@ -86,6 +86,7 @@ export default class CompileDocMake extends BaseCommand {
         },
       })
     } catch (err) {
+      if (err instanceof CompileWaitTimeout) this.error(waitTimeoutMessage(err, 'doc', args.doc_id))
       if (err instanceof Error) this.error(err.message)
       throw err
     }
