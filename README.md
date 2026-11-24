@@ -114,7 +114,9 @@ hw face:compile alice --file podcast.mp3 --kind thread --face-speaker A --rush
 ```
 
 `face:compile` waits for the compile to finish. A compile may have a scheduled start: it says
-when, and waits for it; `--rush` starts it now at the rush rate, and `--no-wait` returns at once.
+when, and waits for it; `--rush` starts it as soon as possible, at the rush rate only if it starts before
+that scheduled start, and `--no-wait` returns at once. A face runs at most 3 compiles at once, rushed or
+not; more wait their turn.
 
 A document's `--medium` is one of the 25 media `hw media:list` shows, each with what it
 covers: a keynote is a `speech`, a diary a `journal entry`. A subcategory is not accepted.

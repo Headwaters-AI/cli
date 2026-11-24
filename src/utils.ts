@@ -1123,9 +1123,11 @@ export function readableLimit(n: unknown, unit = ''): string {
 
 /** --rush, on every command that compiles. */
 export const RUSH_FLAG_DESCRIPTION =
-  'Start the compile now, at the rush rate, rather than at its scheduled start. hw face:compile:stats shows ' +
-  'both rates. A rush covered by a plan\'s compile allowance pays only the difference, from credit. Where ' +
-  'a compile starts at once anyway, this changes nothing and costs nothing extra.'
+  'Start the compile as soon as possible rather than at its scheduled start. The rush rate applies only if ' +
+  'it starts before that scheduled start; one that starts at or after it pays the standard rate. A face runs ' +
+  'at most 3 compiles at once, rushed or not; more wait their turn. hw face:compile:stats shows both rates. ' +
+  'A rush covered by a plan\'s compile allowance pays only the difference, from credit. Where a compile ' +
+  'starts at once anyway, this changes nothing and costs nothing extra.'
 
 /** Milliseconds for an API timestamp, or undefined. One with no zone is UTC, as the API means it. */
 function startsAtMs(iso: unknown): number | undefined {
