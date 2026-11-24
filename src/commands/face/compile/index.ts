@@ -30,8 +30,9 @@ export default class FaceCompile extends BaseCommand {
     'face\'s own writing, and every word in it is read as theirs: text files, PDF and Word .docx, or audio and ' +
     'video, which are transcribed first. Repeat --file for several text documents; each becomes its own document. ' +
     'An interview, transcript or dialogue is a thread: --kind thread --face-speaker NAME, so only the face\'s ' +
-    'turns are used. A compile may have a scheduled start: it says when, and waits for it; --rush starts it now ' +
-    'at the rush rate, and --no-wait returns at once.'
+    'turns are used. A compile may have a scheduled start: it says when, and waits for it; --rush starts it as ' +
+    'soon as possible, at the rush rate only if it starts before that scheduled start, and --no-wait returns at ' +
+    'once. A face runs at most 3 compiles at once, rushed or not; more wait their turn.'
 
   static examples = [
     '<%= config.bin %> <%= command.id %> alice --file essay.txt --medium essay',
