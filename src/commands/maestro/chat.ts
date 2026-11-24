@@ -22,7 +22,7 @@ export default class MaestroChat extends ChatCommand {
     ...BaseCommand.baseFlags,
     ...statelessChatFlags(),
     responses: Flags.boolean({description: 'Send it to /v1/responses whatever the catalog says (routing is automatic otherwise).', default: false, exclusive: ['messages']}),
-    messages: Flags.boolean({description: 'Send it to /v1/messages, in the Anthropic Messages format, whatever the model.', default: false, exclusive: ['responses']}),
+    messages: Flags.boolean({description: 'Send it to /v1/messages, in the Messages format. Not every decoder is served there; a refusal names the route to use.', default: false, exclusive: ['responses']}),
   }
 
   protected forcedEndpoint(flags: Record<string, unknown>): string | undefined {
