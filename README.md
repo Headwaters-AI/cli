@@ -138,7 +138,7 @@ model string is accepted in `--face` too:
 
 | `--face` | Command |
 |---|---|
-| `@alice:maestro-1` | `hw maestro:choices` (Maestro answers) |
+| `@alice:maestro-1/choices` | `hw maestro:choices` (Maestro answers) |
 | `@alice:maestro-1/gpt-5.4` | `hw maestro:chat` |
 | `@alice:maestro-1/jev-latest` | `hw maestro:decide` |
 | `@dana~alice:maestro-1/gpt-5.4` | another account's face, published or shared with you |

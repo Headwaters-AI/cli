@@ -6,7 +6,7 @@
  * answer (`gpt-5.4`, `jev-latest`). The `/` reads like a fraction, the
  * upstream model over the downstream one:
  *
- *   @alice:maestro-1                    hw maestro:choices (our model answers)
+ *   @alice:maestro-1/choices            hw maestro:choices (our model answers)
  *   @alice:maestro-1/gpt-5.4            chat, decide (a downstream model answers)
  *   @dana~alice:maestro-1/gpt-5.4       another account's face
  *   (@alice | @bob):maestro-1-flash     a composite
@@ -23,6 +23,9 @@
 /** The maestros, the default first. */
 export const MAESTROS = ['maestro-1', 'maestro-1-flash'] as const
 export const DEFAULT_MAESTRO = MAESTROS[0]
+
+/** The decoder /v1/choices runs, named after the `/`: `@alice:maestro-1/choices`. */
+export const CHOICES_DECODER = 'choices'
 
 export interface ModelName {
   /** Our part, `@alice:maestro-1`, or undefined when there is none. */
@@ -88,7 +91,7 @@ export function modelProblem(raw: string, needs: 'upstream' | 'both', example = 
     }
     return `Add a face: @<face>:${DEFAULT_MAESTRO}${needs === 'both' ? `/${s}` : ''}`
   }
-  if (needs === 'upstream' && p.downstream) return `maestro:choices takes the face and its maestro alone, with no decoder after it: ${p.upstream}`
+  if (needs === 'upstream' && p.downstream && p.downstream.toLowerCase() !== CHOICES_DECODER) return `maestro:choices takes the ${CHOICES_DECODER} decoder after the maestro: ${p.upstream}/${CHOICES_DECODER}`
   if (needs === 'both' && !p.downstream) return `Name the model that answers after the maestro: ${p.upstream}/<model>, e.g. ${p.upstream}/${example}`
   return undefined
 }
