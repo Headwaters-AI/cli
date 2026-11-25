@@ -131,7 +131,7 @@ speakers included. `face:compile` warns when a text file reads as a transcript.
 is `@head~socrates`), and a composite joins faces with `|`, `&`, `-` and `^`. Quote a composite,
 because the shell reads `|` and `&`.
 
-The face runs on `maestro-1`; `--flash` picks `maestro-1-flash`, which answers sooner and costs 10
+The face runs on `maestro-1`; `--fast` picks `maestro-1-fast`, which answers sooner and costs 10
 times more on the Maestro part. `--decoder` names the model that answers after it: a decision
 model for `maestro:decide` (default `jev-latest`), a chat model for `maestro:chat`. The full
 model string is accepted in `--face` too:
@@ -142,7 +142,7 @@ model string is accepted in `--face` too:
 | `@alice:maestro-1/gpt-5.4` | `hw maestro:chat` |
 | `@alice:maestro-1/jev-latest` | `hw maestro:decide` |
 | `@dana~alice:maestro-1/gpt-5.4` | another account's face, published or shared with you |
-| `(@alice \| @bob):maestro-1-flash/gpt-5.4` | a composite |
+| `(@alice \| @bob):maestro-1-fast/gpt-5.4` | a composite |
 
 The decoder's id is written as `hw models:list` lists it.
 
@@ -154,7 +154,7 @@ with `--state` (prose, at most 3,000 tokens) or `--state-file`, and ask with `--
 ```bash
 hw maestro:choices --face @alice --state "A startup offers me a lead role at a lower salary." --question "Should I take the offer?"
 hw maestro:choices --face @head~socrates --state "A chain bakery opened across the street." --max-choices 3
-hw maestro:choices --face "(@alice | @bob)" --flash --state-file situation.txt -q "What next?"
+hw maestro:choices --face "(@alice | @bob)" --fast --state-file situation.txt -q "What next?"
 ```
 
 The face proposes the options it would weigh, strongest first. Leave `--question` out and it
@@ -249,7 +249,7 @@ export HW_BASE_URL=https://api.faces.sh   # optional override
 Past an allowance, work is paid from credits only with `api_fallback` on (`hw account:preferences`).
 Choices cost $0.42 per million input tokens and $1.00 per million output tokens on `maestro-1`.
 On chat and decisions the steering costs $0.42 per million input tokens plus $0.00042 a call, with no
-output charge, and the decoder its listed price plus 5%. `maestro-1-flash` is 10 times the
+output charge, and the decoder its listed price plus 5%. `maestro-1-fast` is 10 times the
 `maestro-1` price, on the Maestro part only. Compiling costs $16 per million source tokens, $21 for
 a rush. Link a ChatGPT account with `hw auth:connect openai` and interviews and style builds run on
 the ChatGPT plan. Current prices: `hw models:list --kind all`.

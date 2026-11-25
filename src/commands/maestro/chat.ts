@@ -11,7 +11,7 @@ import {parseTemperature} from '../../utils.js'
 
 export default class MaestroChat extends ChatCommand {
   static description =
-    'Chat with a face. Stateless: --face names the face, which steers on maestro-1 (--flash: maestro-1-flash), and ' +
+    'Chat with a face. Stateless: --face names the face, which steers on maestro-1 (--fast: maestro-1-fast), and ' +
     '--decoder names the chat model that writes the reply. Routes to /v1/chat/completions, /v1/responses or ' +
     '/v1/messages from the model catalog; --responses or --messages picks the route. The face\'s style is ' +
     'chosen for each request. --thread <name> keeps a multi-turn chat on this machine ' +
@@ -21,7 +21,7 @@ export default class MaestroChat extends ChatCommand {
 
   static examples = [
     '<%= config.bin %> <%= command.id %> --face @socrates --decoder gpt-5.4 -m "What is virtue?"',
-    '<%= config.bin %> <%= command.id %> --face @head~socrates --flash --decoder claude-sonnet-4-6 -m "What is virtue?"',
+    '<%= config.bin %> <%= command.id %> --face @head~socrates --fast --decoder claude-sonnet-4-6 -m "What is virtue?"',
     '<%= config.bin %> <%= command.id %> --face "(@socrates | @nietzsche)" --decoder gpt-5.4 -m "What is virtue?"',
     '<%= config.bin %> <%= command.id %> --face @socrates --decoder gpt-5.4 --thread justice -m "What is justice?"',
     '<%= config.bin %> <%= command.id %> --thread justice -m "Say more about that"',
@@ -79,14 +79,14 @@ export default class MaestroChat extends ChatCommand {
     let thread: Thread
     if (saved) {
       thread = saved
-      if (flags.face || flags.decoder || flags.flash) {
-        const named = maestroModel(flags.face ?? thread.model, {flash: flags.flash, decoder: flags.decoder, needsDecoder: true})
+      if (flags.face || flags.decoder || flags.fast) {
+        const named = maestroModel(flags.face ?? thread.model, {fast: flags.fast, decoder: flags.decoder, needsDecoder: true})
         if (named.model && named.model !== thread.model) this.warn(`A thread keeps its model; going on with ${thread.model}.`)
       }
       if (flags.system) this.warn('--system is ignored when going on with a thread.')
     } else {
       if (!flags.face) this.error(`No thread "${name}" yet. Start it with --face and --decoder, e.g. hw maestro:chat --thread ${name} --face @alice --decoder gpt-5.4 -m "..."`)
-      const named = maestroModel(flags.face, {flash: flags.flash, decoder: flags.decoder, needsDecoder: true})
+      const named = maestroModel(flags.face, {fast: flags.fast, decoder: flags.decoder, needsDecoder: true})
       if (named.problem || !named.model) this.error(named.problem ?? 'Name the face.')
       const now = new Date().toISOString()
       thread = {id: name, model: named.model, system: flags.system, created_at: now, updated_at: now, messages: []}

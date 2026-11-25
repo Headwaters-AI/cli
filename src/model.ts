@@ -9,7 +9,7 @@
  *   @alice:maestro-1/choices            hw maestro:choices (our model answers)
  *   @alice:maestro-1/gpt-5.4            chat, decide (a downstream model answers)
  *   @dana~alice:maestro-1/gpt-5.4       another account's face
- *   (@alice | @bob):maestro-1-flash     a composite
+ *   (@alice | @bob):maestro-1-fast      a composite
  *
  * The prefix is ours only when `:maestro-N` ends it before the first `/`.
  * Everything after that `/` is the downstream id, verbatim, so its own `/`,
@@ -21,7 +21,7 @@
  */
 
 /** The maestros, the default first. */
-export const MAESTROS = ['maestro-1', 'maestro-1-flash'] as const
+export const MAESTROS = ['maestro-1', 'maestro-1-fast'] as const
 export const DEFAULT_MAESTRO = MAESTROS[0]
 
 /** The decoder /v1/choices runs, named after the `/`: `@alice:maestro-1/choices`. */
@@ -96,22 +96,22 @@ export function modelProblem(raw: string, needs: 'upstream' | 'both', example = 
   return undefined
 }
 
-/** The maestro the --flash flag picks. */
-export const FLASH_MAESTRO = MAESTROS[1]
+/** The maestro the --fast flag picks. */
+export const FAST_MAESTRO = MAESTROS[1]
 
 /**
- * The `model` the maestro:* commands send, from --face, --flash and the decoder.
+ * The `model` the maestro:* commands send, from --face, --fast and the decoder.
  *
  * --face is the face alone (`@owner~face`, a composite), and the maestro and the
  * decoder are added here. A full model string (`@owner~face:maestro-1/<decoder>`)
  * in --face is sent as it is, so it must not also be given its parts.
  */
-export function maestroModel(face: string, opts: {flash?: boolean; decoder?: string; needsDecoder: boolean}): {model?: string; problem?: string} {
+export function maestroModel(face: string, opts: {fast?: boolean; decoder?: string; needsDecoder: boolean}): {model?: string; problem?: string} {
   const raw = face.trim()
   if (!raw) return {problem: 'Name the face: --face @<face>, or @<owner>~<face> for one shared with you.'}
   const p = parseModel(raw)
   if (p.upstream) {
-    if (opts.flash) return {problem: `--face already names its maestro (${p.maestro}): drop --flash, or name the face alone.`}
+    if (opts.fast) return {problem: `--face already names its maestro (${p.maestro}): drop --fast, or name the face alone.`}
     if (p.downstream && opts.decoder) return {problem: `--face already names its decoder (${p.downstream}): drop --decoder, or name the face alone.`}
     if (!opts.needsDecoder && p.downstream) return {problem: `This takes no decoder after the maestro: --face ${p.upstream}`}
     const model = opts.decoder ? `${p.upstream}/${opts.decoder.trim()}` : raw
@@ -119,7 +119,7 @@ export function maestroModel(face: string, opts: {flash?: boolean; decoder?: str
     return {model}
   }
   if (raw.includes('/') || /:maestro/i.test(raw)) return {problem: `Write --face as the face alone (@alice, @owner~alice) or as @owner~face:${DEFAULT_MAESTRO}/<decoder>.`}
-  const upstream = `${asFace(raw)}:${opts.flash ? FLASH_MAESTRO : DEFAULT_MAESTRO}`
+  const upstream = `${asFace(raw)}:${opts.fast ? FAST_MAESTRO : DEFAULT_MAESTRO}`
   if (!opts.needsDecoder) return {model: upstream}
   if (!opts.decoder?.trim()) return {problem: `Name the decoder: --decoder <model>, e.g. --decoder gpt-5.4.`}
   return {model: `${upstream}/${opts.decoder.trim()}`}

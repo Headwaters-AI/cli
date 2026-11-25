@@ -27,7 +27,7 @@ export function statelessChatFlags() {
         'The face: @alice, @owner~alice for one shared with you, or a composite such as "(@a | @b)" (operators | & - ^). ' +
         'The full model, @owner~face:maestro-1/<decoder>, is accepted too. Needed unless going on with a --thread.',
     }),
-    flash: Flags.boolean({description: 'Steer with maestro-1-flash: sooner, at 10 times the steering price.', default: false}),
+    fast: Flags.boolean({description: 'Steer with maestro-1-fast: sooner, at 10 times the steering price.', default: false}),
     decoder: Flags.string({description: 'The chat model that writes the reply, any chat model in hw models:list, written as it is listed (e.g. gpt-5.4).'}),
     ...rest,
   }
@@ -48,7 +48,7 @@ export abstract class ChatCommand extends BaseCommand {
     const client = this.makeClient(flags)
     const json = this.jsonEnabled()
 
-    const named = maestroModel(flags.face ?? '', {flash: flags.flash, decoder: flags.decoder, needsDecoder: true})
+    const named = maestroModel(flags.face ?? '', {fast: flags.fast, decoder: flags.decoder, needsDecoder: true})
     if (named.problem || !named.model) this.error(named.problem ?? 'Name the face.')
     const model = named.model
     const problem = chatModelProblem(model)

@@ -12,14 +12,14 @@ export default class MaestroChoices extends BaseCommand {
     'most 3,000 tokens) or --state-file, ask with --question, and the face proposes the options it would weigh, ' +
     'strongest first. Leave --question out and it proposes the question it would ask. --face names the face ' +
     '(@alice, @owner~alice for one shared with you, or a composite such as "(@alice | @bob)"); it runs on ' +
-    'maestro-1, or maestro-1-flash with --flash, which answers sooner and costs 10 times more. ' +
+    'maestro-1, or maestro-1-fast with --fast, which answers sooner and costs 10 times more. ' +
     'In a state, use state:choices. Billed on the tokens it processes (see hw models:list --kind upstream). ' +
     'Takes about 10 to 30 seconds.'
 
   static examples = [
     '<%= config.bin %> <%= command.id %> --face @alice --state "A startup offers me a lead role at a lower salary." --question "Should I take the offer?"',
     '<%= config.bin %> <%= command.id %> --face @head~socrates --state "A chain bakery opened across the street."',
-    '<%= config.bin %> <%= command.id %> --face "(@alice | @bob)" --flash --state-file situation.txt -q "What next?" --json',
+    '<%= config.bin %> <%= command.id %> --face "(@alice | @bob)" --fast --state-file situation.txt -q "What next?" --json',
     '<%= config.bin %> <%= command.id %> --face @alice:maestro-1/choices --state "The lease is up in March." --max-choices 3',
   ]
 
@@ -31,7 +31,7 @@ export default class MaestroChoices extends BaseCommand {
         'The full model, @owner~face:maestro-1/choices, is accepted too.',
       required: true,
     }),
-    flash: Flags.boolean({description: 'Run on maestro-1-flash: sooner, and 10 times the price.', default: false}),
+    fast: Flags.boolean({description: 'Run on maestro-1-fast: sooner, and 10 times the price.', default: false}),
     question: Flags.string({char: 'q', description: 'The question. Leave it out to have the face propose the question it would ask.'}),
     state: Flags.string({description: 'The situation, as prose: at most 3,000 tokens.', exclusive: ['state-file']}),
     'state-file': Flags.string({description: 'Read the situation from this file.', exclusive: ['state']}),
@@ -47,7 +47,7 @@ export default class MaestroChoices extends BaseCommand {
     if (named.upstream && named.downstream && named.downstream.toLowerCase() !== CHOICES_DECODER) {
       this.error(`maestro:choices runs the ${CHOICES_DECODER} decoder: --face ${named.upstream}/${CHOICES_DECODER}, or the face alone.`)
     }
-    const {model, problem} = maestroModel(flags.face, {flash: flags.flash, decoder: named.upstream && named.downstream ? undefined : CHOICES_DECODER, needsDecoder: true})
+    const {model, problem} = maestroModel(flags.face, {fast: flags.fast, decoder: named.upstream && named.downstream ? undefined : CHOICES_DECODER, needsDecoder: true})
     if (problem || !model) this.error(problem ?? 'Name the face.')
 
     const body: Record<string, unknown> = {model}
