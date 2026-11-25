@@ -52,7 +52,7 @@ export default class MaestroDecide extends BaseCommand {
     'Ask what a face would decide. Stateless: describe a situation, ask typed questions about it, and get back ' +
     'numbers, as this face: a yes-or-no (noul), a pick between options (choice), or a place on a graded scale ' +
     '(score). maestro:choices gives you the options a face would weigh; this gives you what it would decide, for ' +
-    'routing, simulations or panels. --face names the face; it runs on maestro-1 (--flash: maestro-1-flash), and ' +
+    'routing, simulations or panels. --face names the face; it runs on maestro-1 (--fast: maestro-1-fast), and ' +
     '--decoder names the decision model that answers (default jev-latest). The face steers the decision model\'s ' +
     'answer. In a state, use state:decide. An answer takes about 10 to 20 seconds; one that runs long is held open ' +
     'by the server and can take a minute or more. The steering is billed per input token plus a small fee per ' +
@@ -64,7 +64,7 @@ export default class MaestroDecide extends BaseCommand {
       '--question "Does the speaker sign?" --option yes="signs it as asked" --option no="declines to sign" ' +
       '--option later="asks for time to read it first"',
     '<%= config.bin %> <%= command.id %> --face @alice --state-file situation.txt --question "Is the speaker irritated?"',
-    '<%= config.bin %> <%= command.id %> --face @alice --flash --decoder clef --state-file situation.txt --question "How firm is the reply?" ' +
+    '<%= config.bin %> <%= command.id %> --face @alice --fast --decoder clef --state-file situation.txt --question "How firm is the reply?" ' +
       '--level yields --level hedges --level firm',
     '<%= config.bin %> <%= command.id %> --face "(@alice | @bob)" --state-file situation.json --questions-file questions.json --json',
     '<%= config.bin %> <%= command.id %> --face @alice:maestro-1/gpt-6-luna --state-file situation.txt --questions-file questions.json',
@@ -78,7 +78,7 @@ export default class MaestroDecide extends BaseCommand {
         'The full model, @owner~face:maestro-1/jev-latest, is accepted too.',
       required: true,
     }),
-    flash: Flags.boolean({description: 'Run on maestro-1-flash: sooner, and 10 times the price.', default: false}),
+    fast: Flags.boolean({description: 'Run on maestro-1-fast: sooner, and 10 times the price.', default: false}),
     decoder: Flags.string({
       description:
         'The decision model that answers: jev-latest (the default), clef, clef-flash or gpt-6-luna today (hw models:list ' +
@@ -162,7 +162,7 @@ export default class MaestroDecide extends BaseCommand {
 
     const given = parseModel(flags.face)
     const full = given.upstream !== undefined && given.downstream !== undefined
-    const {model: named, problem} = maestroModel(flags.face, {flash: flags.flash, decoder: full ? flags.decoder : (flags.decoder ?? 'jev-latest'), needsDecoder: true})
+    const {model: named, problem} = maestroModel(flags.face, {fast: flags.fast, decoder: full ? flags.decoder : (flags.decoder ?? 'jev-latest'), needsDecoder: true})
     if (problem || !named) this.error(problem ?? 'Name the face.')
     const name = parseModel(named)
     const face = name.faces as string

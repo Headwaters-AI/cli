@@ -127,7 +127,7 @@ export function allowanceLines(sub: Record<string, unknown>): string[] {
         ? `$${rates.choices_usd_per_million_input_tokens} and $${rates.choices_usd_per_million_output_tokens} per million choices input and output tokens, `
         : ''
       past +=
-        ` Credits pay ${steer}${choices}on maestro-1 (10 times on maestro-1-flash), and ` +
+        ` Credits pay ${steer}${choices}on maestro-1 (10 times on maestro-1-fast), and ` +
         `$${rates.compile_usd_per_million_source_tokens} per million compile tokens${rush}.`
     }
     lines.push(`  ${past}`)
