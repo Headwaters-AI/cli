@@ -5,7 +5,7 @@ The Headwaters command line. Compile a **face** from an author's source texts, t
 steers any chat model's replies, and a decision model's typed decisions. A **state** is a proof in
 progress that your agent builds with a face, kept on the server.
 
-Every command is `topic:command`: `face:*`, `maestro:*` and `state:*`, plus `account:*` and `key:*`.
+Commands are grouped by topic, as `hw topic:command`: `face:*`, `maestro:*` and `state:*`, plus `account:*` and `key:*`.
 
 ## Installation
 
