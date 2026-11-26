@@ -230,13 +230,16 @@ command, they work on this directory's state unless `--state-id` names another.
 ### Keep the state in view
 
 `hw state:hud` prints the state in three short lines, the same size whatever the size of the
-proof: the root goal and how much of it is proved, the next candidate to try, what waits on the
-human, the environment or a test, and the claims (`--as <name>` shows yours). The last line is
-the command that shows the detail.
+proof. It is about one root goal: the one `--goal "<key>"` pins (kept in `.headwaters/hud`;
+`--goal ""` unpins it), else the open root goal with children written last. It shows that goal's
+status as `state:get` shows it and how many premises in its tree are proved, the next step (the
+candidate to try, else the first thing its last line asks, such as "refine 7.2"), what waits on
+the human, the environment or a test, and the claims (`--as <name>` shows yours). The last line
+is the command that shows the detail.
 
 ```
-HUD · fs_QPSO… · "the dinner is planned" · open · 1/7 proved
-next: 1.2.1 pasta primavera · waiting: human on 1.3 · held: 1.2 builder-A
+HUD · fs_cm7j… · 1 "the dinner is planned" +2 other roots · open · 1/6 proved
+next: try 1.3.1 pasta primavera · waiting: human on 1.2
 drill: hw state:get "pasta primavera"
 ```
 

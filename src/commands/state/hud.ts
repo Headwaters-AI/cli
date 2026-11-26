@@ -5,8 +5,8 @@ import {BaseCommand} from '../../base.js'
 import {HwClient} from '../../client.js'
 import {ReplyCommand, STATE_DIR, findStateFile, stateIdFlag} from '../../foreman.js'
 import {
-  HUD_COUNT_FILE, HUD_FILE, HUD_MODES, HudMode, Proof, contextOutput, hudLines, hudShows, hudStatusLine,
-  isStateWrite, readHudMode, shortId, throttleKey, throttleStep,
+  HUD_COUNT_FILE, HUD_FILE, HUD_MODES, HudMode, Proof, contextOutput, formatHud, hudLines, hudShows, hudStatusLine,
+  isStateWrite, readHud, shortId, throttleKey, throttleStep,
 } from '../../hud.js'
 
 const HOOKS = ['user-prompt', 'post-tool', 'statusline', 'session-start', 'stop', 'session-end'] as const
@@ -43,11 +43,13 @@ async function readEvent(): Promise<Record<string, unknown>> {
 
 export default class StateHud extends ReplyCommand {
   static description =
-    'The state\'s heads-up display: three short lines, fixed layout, never the tree: the state, its root goal, ' +
-    'proved, refuted or open, how many premises are proved; the next candidate to try and its p, what waits on ' +
-    'the human, the environment or a test, and the claims (with --as, yours); then the command that shows the ' +
-    'detail. "on", "off" or "auto" sets when the hooks show it, in .headwaters/hud next to the state file (auto, ' +
-    'the default: when the directory has a state). --hook <event> reads a hook event on stdin and prints that ' +
+    'The state\'s heads-up display: three short lines, fixed layout, never the tree: the state, one root goal ' +
+    '(--goal pins it; else the open root goal with children written last), proved, refuted or open as state:get ' +
+    'shows it, how many premises in its tree are proved; the next step (the candidate to try, else the first thing ' +
+    'its last line asks, such as "refine 7.2"), what waits on the human, the environment or a test, and the claims ' +
+    '(with --as, yours); then the command that shows the detail. "on", "off" or "auto" sets when the hooks show it, ' +
+    'in .headwaters/hud next to the state file, with the pinned goal (auto, the default: when the directory has a ' +
+    'state). --hook <event> reads a hook event on stdin and prints that ' +
     'hook\'s output (Claude Code and Codex): user-prompt each user message, post-tool after an hw state: write or ' +
     `every 15 tool calls, statusline one line for the status bar, and session-start, stop and session-end. A hook ` +
     'never blocks and never fails: on any error it prints nothing and exits 0. Free.'
@@ -55,6 +57,8 @@ export default class StateHud extends ReplyCommand {
   static examples = [
     '<%= config.bin %> <%= command.id %>',
     '<%= config.bin %> <%= command.id %> --as builder-A',
+    '<%= config.bin %> <%= command.id %> --goal "the dinner is planned"',
+    '<%= config.bin %> <%= command.id %> --goal ""',
     '<%= config.bin %> <%= command.id %> off',
     '<%= config.bin %> <%= command.id %> auto',
     '<%= config.bin %> <%= command.id %> --hook user-prompt < event.json',
@@ -64,6 +68,7 @@ export default class StateHud extends ReplyCommand {
     ...BaseCommand.baseFlags,
     ...stateIdFlag,
     as: Flags.string({description: 'Whose claims to show as "you hold": the name their writes carry as --as.', env: 'HW_AS'}),
+    goal: Flags.string({description: 'Pin the root goal the HUD is about (a premise key), kept in .headwaters/hud; "" unpins it.'}),
     hook: Flags.string({description: 'Run as a hook: read the hook event on stdin and print the hook\'s output.', options: [...HOOKS]}),
     harness: Flags.string({description: 'With --hook: the harness, which names the session (claude-code:<id> or codex:<id>).', options: ['claude-code', 'codex'], default: 'claude-code'}),
   }
@@ -89,22 +94,34 @@ export default class StateHud extends ReplyCommand {
       process.exit(0)
     }
 
-    if (args.mode) {
+    let settings = readHud(process.cwd())
+    if (args.mode || flags.goal !== undefined) {
       const found = findStateFile()
       const dir = found ? path.dirname(found.file) : path.join(process.cwd(), STATE_DIR)
       fs.mkdirSync(dir, {recursive: true})
       const file = path.join(dir, HUD_FILE)
-      fs.writeFileSync(file, args.mode + '\n')
-      const what = {on: 'the hooks always show it', off: 'the hooks never show it', auto: 'the hooks show it when this directory has a state'}[args.mode as HudMode]
-      if (!this.jsonEnabled()) this.log(`HUD ${args.mode}: ${what} (${file}).`)
-      return {mode: args.mode, file}
+      const goal = flags.goal === undefined ? settings.goal : flags.goal.trim() || undefined
+      settings = {mode: (args.mode as HudMode | undefined) ?? settings.mode, goal}
+      fs.writeFileSync(file, formatHud(settings))
+      if (!this.jsonEnabled()) {
+        if (args.mode) {
+          const what = {on: 'the hooks always show it', off: 'the hooks never show it', auto: 'the hooks show it when this directory has a state'}[settings.mode]
+          this.log(`HUD ${settings.mode}: ${what} (${file}).`)
+        }
+        if (flags.goal !== undefined) this.log(goal ? `HUD goal pinned: "${goal}" (${file}).` : `HUD goal unpinned (${file}).`)
+      }
+      // setting the mode is all it does; pinning a goal alone then shows the HUD for it
+      if (args.mode) return {...settings, file}
     }
 
     const id = this.stateId(flags)
     const proof = await this.proof(this.makeClient(flags), id).catch((err: Error) => this.error(err.message))
-    const lines = hudLines(proof, id, flags.as)
+    if (settings.goal && !(proof.premises ?? []).some((p) => p.key === settings.goal)) {
+      process.stderr.write(`warn: the pinned goal "${settings.goal}" is not a premise of this state; showing the default goal.\n`)
+    }
+    const lines = hudLines(proof, id, flags.as, settings.goal)
     if (!this.jsonEnabled()) this.log(lines.join('\n'))
-    return {state_id: id, mode: readHudMode(process.cwd()), lines}
+    return {state_id: id, ...settings, lines}
   }
 
   private async proof(client: HwClient, id: string): Promise<Proof> {
@@ -138,7 +155,7 @@ export default class StateHud extends ReplyCommand {
 
     if (!id) {
       // only "on" shows anything without a state, and only in the HUD's own slots
-      if ((hook === 'user-prompt' || hook === 'post-tool' || hook === 'statusline') && readHudMode(cwd) === 'on') {
+      if ((hook === 'user-prompt' || hook === 'post-tool' || hook === 'statusline') && readHud(cwd).mode === 'on') {
         const none = 'HUD · no state here: hw state:create --use makes one'
         out(hook === 'statusline' ? none : contextOutput(hook === 'user-prompt' ? 'UserPromptSubmit' : 'PostToolUse', none))
       }
@@ -157,7 +174,8 @@ export default class StateHud extends ReplyCommand {
       return
     }
 
-    if (!hudShows(readHudMode(cwd), true)) return
+    const settings = readHud(cwd)
+    if (!hudShows(settings.mode, true)) return
     if (hook === 'post-tool') {
       const dir = found ? path.dirname(found.file) : path.join(cwd, STATE_DIR)
       const file = path.join(dir, HUD_COUNT_FILE)
@@ -180,9 +198,9 @@ export default class StateHud extends ReplyCommand {
     if (hook === 'statusline') {
       // Claude Code passes the terminal width in COLUMNS
       const cols = Number(process.env.COLUMNS)
-      out(hudStatusLine(proof, id, flags.as, Number.isFinite(cols) && cols > 0 ? cols - 4 : undefined))
+      out(hudStatusLine(proof, id, flags.as, Number.isFinite(cols) && cols > 0 ? cols - 4 : undefined, settings.goal))
       return
     }
-    out(contextOutput(hook === 'user-prompt' ? 'UserPromptSubmit' : 'PostToolUse', hudLines(proof, id, flags.as).join('\n')))
+    out(contextOutput(hook === 'user-prompt' ? 'UserPromptSubmit' : 'PostToolUse', hudLines(proof, id, flags.as, settings.goal).join('\n')))
   }
 }

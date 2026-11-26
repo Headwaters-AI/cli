@@ -2349,40 +2349,103 @@ await cleanStart()
 
 // --- the HUD (#2091): fixed layout, toggle, which calls are writes, the post-tool throttle -------
 {
-  const {hudLines, hudStatusLine, isStateWrite, throttleStep, throttleKey, hudShows, readHudMode, contextOutput, cut, shortId} = await import('../dist/hud.js')
+  const {hudLines, hudStatusLine, isStateWrite, throttleStep, throttleKey, hudShows, readHudMode, readHud, parseHud, formatHud,
+    contextOutput, cut, shortId, chooseRoot, nextStep, firstItem, stepOf} = await import('../dist/hud.js')
+  // one goal: the dinner party, with a candidate to try
   const proof = {
     premises: [
-      {number: '1', key: 'the dinner is planned', role: 'goal', truth: 'open'},
+      {number: '1', key: 'the dinner is planned', role: 'goal', truth: 'open', children: ['the guests', 'the menu', 'the venue is booked', 'each guest can eat each dish']},
       {number: '1.1', key: 'the guests', truth: 'proved'},
-      {number: '1.2', key: 'the menu', role: 'goal', truth: 'open', claimed_by: 'builder-A', next_to_try: 'pasta primavera'},
+      {number: '1.2', key: 'the menu', role: 'goal', truth: 'open', claimed_by: 'builder-A', next_to_try: 'pasta primavera', children: ['pasta primavera', 'grilled fish']},
       {number: '1.2.1', key: 'pasta primavera', truth: 'open', p: 0.714},
       {number: '1.2.2', key: 'grilled fish', truth: 'open', p: 0.3},
       {number: '1.3', key: 'the venue is booked', role: 'goal', truth: 'open', await: 'human'},
       {number: '1.4', key: 'each guest can eat each dish', role: 'test', truth: 'open', await: 'environment'},
     ],
-    summary: ['Open. Next to try: 1.2.1. Proved when ...'],
+    summary: ['Open. Next to try: 1.2.1 (p 0.71). Proved when 1 is refined, 1.2 is refined, 1.4 passes on 1.2.1 and 1.3 is answered by the human.'],
   }
   const id = 'fs_5bDabcdefghijkl'
   eq('hud: three lines, fixed layout', hudLines(proof, id), [
-    'HUD · fs_5bDa… · "the dinner is planned" · open · 1/7 proved',
-    'next: 1.2.1 pasta primavera (p 0.71) · waiting: human on 1.3, environment on 1.4 · held: 1.2 builder-A',
+    'HUD · fs_5bDa… · 1 "the dinner is planned" · open · 1/7 proved',
+    'next: try 1.2.1 pasta primavera (p 0.71) · waiting: human on 1.3, environment on 1.4 · held: 1.2 builder-A',
     'drill: hw state:get "pasta primavera"',
   ])
   eq('hud: --as shows what you hold', hudLines(proof, id, 'builder-A')[1].endsWith('you hold: 1.2'), true)
   eq('hud: --as holding nothing', hudLines(proof, id, 'someone')[1].endsWith('you hold: nothing'), true)
   eq('hud: an empty state', hudLines({premises: []}, id)[0], 'HUD · fs_5bDa… · empty')
-  const proved = {premises: [{number: '1', key: 'g', truth: 'proved'}], summary: ['Proved.']}
-  eq('hud: proved, nothing next', hudLines(proved, id), ['HUD · fs_5bDa… · "g" · proved · 1/1 proved', 'next: none', 'drill: hw state:get "g"'])
-  eq('hud: a refuted root', hudLines({premises: [{number: '1', key: 'g', truth: 'refuted'}]}, id)[0].includes(' refuted '), true)
-  eq('hud: two roots', hudLines({premises: [{number: '1', key: 'a', truth: 'open'}, {number: '2', key: 'b', truth: 'proved'}]}, id)[0], 'HUD · fs_5bDa… · "a" +1 · open · 1/2 proved')
-  eq('hud: waiting on a test names the test', hudLines({premises: [{number: '1', key: 'g', truth: 'open', await: 't'}, {number: '1.1', key: 't', role: 'test', truth: 'open'}]}, id)[1], 'next: none · waiting: test 1.1 on 1')
-  const long = 'x'.repeat(200)
-  const big = {premises: [{number: '1', key: long, truth: 'open', next_to_try: long + 'y'}, {number: '1.1', key: long + 'y', truth: 'open'}]}
-  eq('hud: long keys are cut, the drill keeps the whole key', [hudLines(big, id)[0].length < 80, hudLines(big, id)[1].length < 60], [true, true])
+  const proved = {premises: [{number: '1', key: 'g', role: 'goal', truth: 'proved'}], summary: ['Proved.']}
+  eq('hud: proved, nothing next', hudLines(proved, id), ['HUD · fs_5bDa… · 1 "g" · proved · 1/1 proved', 'next: none, proved', 'drill: hw state:get "g"'])
+
+  // a messy state, shaped like a real one (fs_5bD…): 9 roots listed out of number order, stray
+  // open leaves, refuted roots, a proved root, and the working goal (7) written last, an AND
+  // whose children are not refined. The server's last line has one line per goal.
+  const messy = {
+    premises: [
+      {number: '1.1', key: 'the dev face is general', truth: 'open'},
+      {number: '8', key: 'Clean Tree', truth: 'open', children: []},
+      {number: '9', key: 'Written Specification', truth: 'open', children: []},
+      {number: '1', key: 'one general dev face recasts any task', role: 'goal', op: 'and', truth: 'open', children: ['the dev face is general']},
+      {number: '2', key: 'the backend renders the state', role: 'goal', op: 'and', truth: 'open', children: ['2.1 child']},
+      {number: '2.1', key: '2.1 child', truth: 'proved'},
+      {number: '21', key: 'the state is a live blueprint', op: 'and', truth: 'refuted', children: ['21.1 child']},
+      {number: '21.1', key: '21.1 child', truth: 'refuted'},
+      {number: '26', key: 'Consistency Check', truth: 'refuted', children: []},
+      {number: '30', key: 'premise:refine asks F2', truth: 'proved', children: []},
+      {number: '5', key: 'a strong agent solves Terminal-Bench', role: 'goal', truth: 'open', children: []},
+      {number: '7', key: 'strong agents with hw solve Terminal-Bench 4.0 fully, for less compute', role: 'goal', op: 'and', truth: 'open',
+        children: ['the hw CLI is built', 'the Maestro skill is written', 'the docs describe Maestro', 'each task costs less']},
+      {number: '7.1', key: 'the hw CLI is built', truth: 'proved', op: 'and', children: ['a test: offline checks pass']},
+      {number: '7.1.1', key: 'a test: offline checks pass', role: 'test', truth: 'proved'},
+      {number: '7.2', key: 'the Maestro skill is written', truth: 'open', op: 'and', children: []},
+      {number: '7.3', key: 'the docs describe Maestro', truth: 'open', op: 'and', children: [], await: 'human'},
+      {number: '7.4', key: 'each task costs less', truth: 'open', children: []},
+    ],
+    summary: [
+      '1 Open. Proved when 1 is refined and 1.1 is refined.',
+      '2 Open. Proved when 2 is refined.',
+      '5 Open. Proved when 5 is refined.',
+      '7 Open. Proved when 7.2 is refined, 7.3 is answered by the human and 7.4 is refined or tested.',
+      '7.1 was marked complete by hand; premise:refine would check that its children are sufficient.',
+    ],
+  }
+  eq('hud: a messy state: the working goal, its own status, count and next step', hudLines(messy, id), [
+    'HUD · fs_5bDa… · 7 "strong agents with hw solve Ter…" +8 other roots · open · 2/6 proved',
+    'next: refine 7.2 the Maestro skill is written · waiting: human on 7.3',
+    'drill: hw state:get "the Maestro skill is written"',
+  ])
+  eq('hud: a refuted stray root does not make the goal refuted', hudLines(messy, id)[0].includes('refuted'), false)
+  eq('hud: the default root is the open goal with children written last', chooseRoot(messy.premises).number, '7')
+  eq('hud: a pinned goal', hudLines(messy, id, undefined, 'the backend renders the state'), [
+    'HUD · fs_5bDa… · 2 "the backend renders the state" +8 other roots · open · 1/2 proved',
+    'next: refine 2 the backend renders the state',
+    'drill: hw state:get "the backend renders the state"',
+  ])
+  eq('hud: a pinned refuted root says so', hudLines(messy, id, undefined, 'the state is a live blueprint').slice(0, 2), [
+    'HUD · fs_5bDa… · 21 "the state is a live blueprint" +8 other roots · refuted · 0/2 proved', 'next: none, refuted'])
+  eq('hud: a pin that is not a premise falls back', chooseRoot(messy.premises, 'gone').number, '7')
+  eq('hud: one other root is singular', hudLines({premises: [{number: '1', key: 'a', role: 'goal', truth: 'open', children: []}, {number: '2', key: 'b', truth: 'proved'}], summary: ['Open. Proved when 1 is refined.']}, id)[0],
+    'HUD · fs_5bDa… · 1 "a" +1 other root · open · 0/1 proved')
+  const waits = {premises: [{number: '1', key: 'g', role: 'goal', truth: 'open', children: ['t'], await: null}, {number: '1.1', key: 't', role: 'test', truth: 'open', await: 'human'}],
+    summary: ['Open. Proved when 1.1 is answered by the human.']}
+  eq('hud: everything waits', hudLines(waits, id)[1], 'next: none, everything waits · waiting: human on 1.1')
+  eq('hud: waiting on a test names the test', hudLines({premises: [{number: '1', key: 'g', role: 'goal', truth: 'open', await: 't', children: ['t']}, {number: '1.1', key: 't', role: 'test', truth: 'open'}],
+    summary: ['Open. Proved when 1 waits on 1.1 and 1.1 passes.']}, id)[1], 'next: run test 1.1 t · waiting: test 1.1 on 1')
+  eq('hud: steps', [stepOf('7.2 is refined'), stepOf('1.4 passes on 1.2.1'), stepOf('1.1.3 is stated'), stepOf('1.3 is answered by the human'), stepOf('"a, b" is refined or tested')],
+    [{step: 'refine 7.2', ref: '7.2'}, {step: 'test 1.4 on 1.2.1', ref: '1.4'}, {step: 'state 1.1.3', ref: '1.1.3'}, undefined, {step: 'refine or test "a, b"', ref: '"a, b"'}])
+  eq('hud: first item, outside quotes', [firstItem('7.2 is refined, 7.3 is refined and 7.4 is refined'), firstItem('"a, b and c" is refined and 2 is refined'), firstItem('one')],
+    ['7.2 is refined', '"a, b and c" is refined', 'one'])
+  eq('hud: a step on a quoted key finds the premise', nextStep({premises: [{number: '1', key: 'g', role: 'goal', truth: 'open', children: ['a, b']}, {number: '1.1', key: 'a, b', truth: 'open'}],
+    summary: ['Open. Proved when "a, b" is refined.']}, {number: '1', key: 'g', role: 'goal', truth: 'open'}).text, 'refine "a, b"')
+  const long = 'x'.repeat(120)
+  const big = {premises: [{number: '1', key: long, role: 'goal', truth: 'open', children: [long + 'y'], next_to_try: long + 'y'}, {number: '1.1', key: long + 'y', truth: 'open'}],
+    summary: ['Open. Next to try: 1.1. Proved when 1.1 is refined or tested.']}
+  eq('hud: long keys are cut, the drill keeps the whole key', [hudLines(big, id)[0].length < 80, hudLines(big, id)[1].length < 60, hudLines(big, id)[2].includes(long + 'y')], [true, true, true])
   eq('hud: cut', [cut('abc', 5), cut('abcdefgh', 5)], ['abc', 'abcd…'])
   eq('hud: short id', shortId('fs_QPSOHe8tyWKtwJfgiNEvsW2A'), 'fs_QPSO…')
-  eq('hud: status line is one line, cut to the width', [hudStatusLine(proof, id).includes('\n'), hudStatusLine(proof, id, undefined, 40).length], [false, 40])
-  eq('hud: no em-dash in any line', hudLines(proof, id).join('').includes('—'), false)
+  eq('hud: status line is one line, cut to the width', [hudStatusLine(proof, id).includes('\n'), hudStatusLine(proof, id, undefined, 40).length <= 40], [false, true])
+  eq('hud: no em-dash in any line', [...hudLines(proof, id), ...hudLines(messy, id)].join('').includes('—'), false)
+  eq('hud: the settings file', [parseHud('off\n'), parseHud('on\ngoal: the menu\n'), parseHud(''), formatHud({mode: 'auto', goal: 'g'}), formatHud({mode: 'off'})],
+    [{mode: 'off'}, {mode: 'on', goal: 'the menu'}, {mode: 'auto'}, 'auto\ngoal: g\n', 'off\n'])
 
   const bash = (command) => ({tool_name: 'Bash', tool_input: {command}})
   eq('hud: state writes', ['add', 'edit', 'delete', 'refine', 'choices', 'decide', 'claim'].map((v) => isStateWrite(bash(`hw state:${v} "k"`))), [true, true, true, true, true, true, true])
