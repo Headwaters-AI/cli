@@ -166,20 +166,20 @@ export function refusalGuidance(status: number, errorCode: string | undefined, m
     return `Wait that long before asking again: a request sent sooner is refused too. Limits per plan: ${DEFAULT_API}/v1/rates`
   }
   // A top-up refused for want of a card would otherwise be told to top up.
-  if (status === 402 && /card/i.test(message)) return 'Add a card with: hw billing:card-setup'
-  if (status === 401) return 'Check what you are signed in with: hw auth:whoami. To sign in again: hw auth:login'
+  if (status === 402 && /card/i.test(message)) return 'Add a card with: hw account:card-add'
+  if (status === 401) return 'Check what you are signed in with: hw account:whoami. To sign in again: hw account:login'
   // A rush the plan's allowance covers still pays its premium from credit.
   if (status === 402 && errorCode === 'insufficient_credit_for_rush') {
-    return 'Add credit with: hw billing:topup --amount <usd>, or run make again without --rush to start at the scheduled time.'
+    return 'Add credit with: hw account:topup --amount <usd>, or run make again without --rush to start at the scheduled time.'
   }
-  if (status === 402) return 'Add credit with: hw billing:topup --amount <usd>'
+  if (status === 402) return 'Add credit with: hw account:topup --amount <usd>'
   // The ChatGPT route cannot serve this request: on Free there is none, and on
   // Connect or Pro the model or the link may not allow it. The server says
   // which. Nothing was charged.
   if (status === 422 && errorCode === 'oauth_only_unavailable') {
     return (
       'To run it on credits instead, drop --oauth-only. On Free, OAuth-only needs Connect or Pro: ' +
-      'hw billing:subscription:activate'
+      'hw account:activate'
     )
   }
   // A formula whose result has nothing in it: the server's message says which
@@ -285,7 +285,7 @@ export class HwClient {
   authHeader(requireJwt = false): Record<string, string> {
     if (requireJwt) {
       if (!this.token) {
-        throw new Error(this.withheld ?? 'JWT login required. Run: hw auth:login')
+        throw new Error(this.withheld ?? 'JWT login required. Run: hw account:login')
       }
 
       return {Authorization: `Bearer ${this.token}`}
@@ -295,7 +295,7 @@ export class HwClient {
     if (this.apiKey) return {Authorization: `Bearer ${this.apiKey}`}
     if (this.token) return {Authorization: `Bearer ${this.token}`}
     // Thrown rather than exiting here, so --json still answers in JSON.
-    throw new Error(this.withheld ?? 'Authentication required. Run: hw auth:login or set HW_API_KEY')
+    throw new Error(this.withheld ?? 'Authentication required. Run: hw account:login or set HW_API_KEY')
   }
 
   private wrapNetworkError(err: unknown, path: string): never {

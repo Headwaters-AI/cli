@@ -20,7 +20,7 @@ export default class AuthDisconnect extends BaseCommand {
   }
 
   static examples = [
-    '<%= config.bin %> auth:disconnect openai',
+    '<%= config.bin %> account:disconnect openai',
   ]
 
   async run(): Promise<unknown> {
@@ -31,7 +31,7 @@ export default class AuthDisconnect extends BaseCommand {
     try {
       const rows = (await client.get('/v1/oauth', {requireJwt: true})) as Array<Record<string, unknown>>
       if (Array.isArray(rows) && !rows.some((r) => r.provider === args.provider)) {
-        this.error(`No ${args.provider} account is connected, so there is nothing to disconnect. See: hw auth:connections`)
+        this.error(`No ${args.provider} account is connected, so there is nothing to disconnect. See: hw account:connections`)
       }
     } catch (err) {
       if (!(err instanceof HwAPIError)) throw err

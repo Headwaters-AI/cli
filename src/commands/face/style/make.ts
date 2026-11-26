@@ -323,7 +323,7 @@ export default class StyleMake extends BaseCommand {
         `'${model}' cannot run on ChatGPT, so this build would run on the default build model and be charged to credits.\n` +
           'Leave out --model to build on your linked ChatGPT account at no charge, ' +
           'or re-run with --allow-paid if you mean to pay.\n' +
-          'If you are here because a build failed on authentication, reconnect instead: hw auth:connect openai',
+          'If you are here because a build failed on authentication, reconnect instead: hw account:connect openai',
       )
     }
 
@@ -332,7 +332,7 @@ export default class StyleMake extends BaseCommand {
     if ((await chatgptLinked(client)) === false) {
       this.error(
         'No ChatGPT account is linked, so this build has nothing to run on without being charged.\n' +
-          'Link one with: hw auth:connect openai (Connect or Pro), ' +
+          'Link one with: hw account:connect openai (Connect or Pro), ' +
           'or re-run with --allow-paid to pay from credits. Nothing was started.',
       )
     }
@@ -363,7 +363,7 @@ export default class StyleMake extends BaseCommand {
         `HTTP 422: ${err.message.split('\n')[0]}\n` +
           'On the Free plan a style build is charged to credits. Re-run with --allow-paid to pay, ' +
           'or subscribe to Connect or Pro and link ChatGPT, where a build runs at no charge: ' +
-          'hw billing:subscription:activate\nNothing was started.',
+          'hw account:activate\nNothing was started.',
       )
     }
     // Without --allow-paid a build runs only on the linked ChatGPT account,
@@ -371,7 +371,7 @@ export default class StyleMake extends BaseCommand {
     if (err.errorCode === 'chatgpt_not_linked') {
       this.error(
         'This build cannot run on a linked ChatGPT account: none is linked, or the named --model cannot run there.\n' +
-          'Link ChatGPT with: hw auth:connect openai (Connect or Pro), ' +
+          'Link ChatGPT with: hw account:connect openai (Connect or Pro), ' +
           'or re-run with --allow-paid to pay from credits.\nNothing was started, and nothing was charged.',
       )
     }

@@ -274,7 +274,7 @@ eq('field: tokens_used', compileFieldLine('tokens_used', 1200), 'compiled this m
   const rushErr = new HwAPIError(402, 'Payment required: not enough credit for the rush', {errorCode: 'insufficient_credit_for_rush', details: {rush_premium_usd: 1.25}})
   eq('rush refusal: names the premium', makeRefusalMessage(rushErr, 'd1'), 'Payment required: not enough credit for the rush\nRush premium: $1.25, paid from credit.')
   eq('rush refusal: guidance', /without --rush/.test(refusalGuidance(402, 'insufficient_credit_for_rush', 'x') ?? ''), true)
-  eq('rush refusal: still says top up', /billing:topup/.test(refusalGuidance(402, 'insufficient_credit_for_rush', 'x') ?? ''), true)
+  eq('rush refusal: still says top up', /account:topup/.test(refusalGuidance(402, 'insufficient_credit_for_rush', 'x') ?? ''), true)
   eq('blocked refusal: the fix', makeRefusalMessage(new HwAPIError(400, 'No medium.', {errorCode: 'no_medium'}), 'd9').includes('face:doc:edit d9'), true)
   eq('other refusal: status and message', makeRefusalMessage(new HwAPIError(500, 'boom'), 'd1'), 'HTTP 500: boom')
   eq('too late to rush: says so', /--rush no longer applies/.test(makeRefusalMessage(new HwAPIError(409, 'This document\'s compile has already started, so it can no longer be rushed.', {errorCode: 'compile_already_started'}), 'd1')), true)
@@ -432,7 +432,7 @@ eq('card line, not default', cardLine({id: 'pm_2', brand: 'mastercard', last4: '
 // --- refusals that hinge on api_fallback ----------------------------------------
 eq('429 allowance gets guidance', typeof refusalGuidance(429, undefined, 'Connect allowance of $20 used'), 'string')
 eq('429 allowance guidance names the setting', refusalGuidance(429, undefined, 'Your Connect plan has used its weekly allowance (1,600,000 of 1,600,000 tokens).'), 'To continue on credits until it resets: hw account:preferences api_fallback true')
-eq('402 says top up', refusalGuidance(402, undefined, 'no credit'), 'Add credit with: hw billing:topup --amount <usd>')
+eq('402 says top up', refusalGuidance(402, undefined, 'no credit'), 'Add credit with: hw account:topup --amount <usd>')
 eq('429 rate limit is not told about api_fallback', /api_fallback/.test(refusalGuidance(429, undefined, 'Rate limit exceeded') ?? ''), false)
 eq('502 oauth_incomplete gets guidance', typeof refusalGuidance(502, 'oauth_incomplete', 'stopped'), 'string')
 eq('502 other does not', refusalGuidance(502, undefined, 'upstream failed'), undefined)
@@ -463,7 +463,7 @@ eq('warnings: empty report is quiet', reportWarnings({report: {thin_corpus: {}, 
 eq('failure: CONNECT_REQUIRED names --allow-paid', /--allow-paid/.test(jobFailureMessage('CONNECT_REQUIRED: no free route')), true)
 eq('failure: nothing linked is not "expired"', [/No ChatGPT account is linked/.test(jobFailureMessage('CHATGPT_AUTH: sign-in expired', false)), /expired\. Reconnect/.test(jobFailureMessage('CHATGPT_AUTH: x', false))], [true, false])
 eq('failure: a linked account is reconnected', /most likely expired/.test(jobFailureMessage('CHATGPT_AUTH: x', true)), true)
-eq('failure: unknown link says how to check', /auth:connections/.test(jobFailureMessage('CHATGPT_AUTH: x')), true)
+eq('failure: unknown link says how to check', /account:connections/.test(jobFailureMessage('CHATGPT_AUTH: x')), true)
 eq('failure: MODEL_NOT_FREE points at the default route', /Leave out --model/.test(jobFailureMessage('MODEL_NOT_FREE: x')), true)
 eq('failure: a referenced fault is neutral and keeps the reference', [/failed internally/, /reference 0a1b2c3d4e5f/].map((re) => re.test(jobFailureMessage('Could not build. Reference 0a1b2c3d4e5f.'))), [true, true])
 eq('failure: a 500 never prints the server text', /secret detail/.test(jobFailureMessage('secret detail', undefined, undefined, 500)), false)
@@ -473,11 +473,11 @@ eq('served by: the link', servedBy({served_by: {route: 'chatgpt', model: 'gpt-5.
 eq('served by: fell back', servedBy({served_by: {route: 'faces', model: 'mercury-3', fell_back: true}}), 'Headwaters (mercury-3), after the ChatGPT link failed, the rest charged to credits')
 eq('served by: off the link is charged', servedBy({served_by: {route: 'faces', model: 'mercury-3', fell_back: false}}), 'Headwaters (mercury-3), charged to credits')
 eq('served by: the link is never called charged', /charged/.test(servedBy({served_by: {route: 'chatgpt', model: 'm', fell_back: false}})), false)
-eq('failure: an automatic build short of credit says top up', [/billing:topup/, /tried again later/].map((re) => re.test(jobFailureMessage('Not enough credit.', undefined, 'insufficient_credit_for_style_build'))), [true, true])
+eq('failure: an automatic build short of credit says top up', [/account:topup/, /tried again later/].map((re) => re.test(jobFailureMessage('Not enough credit.', undefined, 'insufficient_credit_for_style_build'))), [true, true])
 {
   const msg = styleCreditRefusal({estimated_usd: 3.4, balance_usd: 1.25})
   eq('style 402: estimate and balance', [/up to \$3\.40/.test(msg), /balance is \$1\.25/.test(msg)], [true, true])
-  eq('style 402: suggests the shortfall', /billing:topup --amount 3\b/.test(msg), true)
+  eq('style 402: suggests the shortfall', /account:topup --amount 3\b/.test(msg), true)
   eq('style 402: nothing charged', /nothing was charged/.test(msg), true)
   eq('style 402: without figures', /--amount <usd>/.test(styleCreditRefusal(undefined)), true)
 }
@@ -841,10 +841,10 @@ async function keyFields() {
   const env = {...process.env, HOME: home, HW_BASE_URL: `http://127.0.0.1:${srv.address().port}`, HW_TOKEN: 'jwt-check'}
   const run = (args) => new Promise((r) => execFile(process.execPath, ['bin/run.js', ...args], {env}, () => r()))
   try {
-    await run(['keys:create', '--name', 'n', '--no-save', '--expires-days', '7', '--budget', '2.5', '--face', 'alice', '--model', 'gpt-5-mini', '--json'])
-    eq('keys:create sends the API field names', bodies[0], {name: 'n', expires_in_days: 7, budget_usd: 2.5, allowed_face_ids: ['alice'], allowed_llm_models: ['gpt-5-mini']})
-    await run(['keys:update', 'k1', '--budget', '1', '--json'])
-    eq('keys:update sends budget_usd', bodies[1], {budget_usd: 1})
+    await run(['key:create', '--name', 'n', '--no-save', '--expires-days', '7', '--budget', '2.5', '--face', 'alice', '--model', 'gpt-5-mini', '--json'])
+    eq('key:create sends the API field names', bodies[0], {name: 'n', expires_in_days: 7, budget_usd: 2.5, allowed_face_ids: ['alice'], allowed_llm_models: ['gpt-5-mini']})
+    await run(['key:edit', 'k1', '--budget', '1', '--json'])
+    eq('key:edit sends budget_usd', bodies[1], {budget_usd: 1})
   } finally {
     srv.close()
     fs.rmSync(home, {recursive: true, force: true})
@@ -877,10 +877,10 @@ async function loginOnlyCommands() {
     for (const args of [
       ['face:publish', 'alice', '--yes', '--json'], ['face:unpublish', 'alice', '--json'],
       ['face:share', 'alice', '--add', 'carol', '--yes', '--json'], ['face:unshare', 'alice', '--from', 'bob', '--yes', '--json'],
-      ['face:delete', 'alice', '--yes', '--json'], ['auth:connections', '--json'],
-      ['billing:topup', '--amount', '10', '--yes', '--json'], ['billing:card:remove', 'pm_1', '--yes', '--json'],
-      ['billing:card-setup', '--json'], ['billing:card:default', 'pm_1', '--json'],
-      ['billing:subscription:activate', '--json'],
+      ['face:delete', 'alice', '--yes', '--json'], ['account:connections', '--json'],
+      ['account:topup', '--amount', '10', '--yes', '--json'], ['account:card-remove', 'pm_1', '--yes', '--json'],
+      ['account:card-add', '--json'], ['account:card-default', 'pm_1', '--json'],
+      ['account:activate', '--json'],
     ]) await run(args)
     const loginOnly = seen.filter((s) => s.call !== 'GET /auth/me' && (s.call.startsWith('GET /v1/oauth') || !s.call.startsWith('GET ')))
     eq('login-only commands: each one reached the API', [...new Set(loginOnly.map((s) => s.call))].sort(), [
@@ -947,9 +947,9 @@ async function errorsAndConfirmations() {
     eq('confirm: --json without --yes is refused', [r.code, /Re-run with --yes/.test(json(r)?.error?.message ?? '')], [2, true])
     r = await run(['face:delete', 'alice'])
     eq('confirm: no terminal is refused, not a hang', [r.code, /Re-run with --yes/.test(r.stderr)], [2, true])
-    r = await run(['billing:subscription:plan', 'connect', '--json'])
+    r = await run(['account:plan', 'connect', '--json'])
     eq('confirm: a plan switch under --json asks for --yes', [r.code, /Re-run with --yes/.test(json(r)?.error?.message ?? '')], [2, true])
-    r = await run(['billing:topup', '--amount', '5', '--json'])
+    r = await run(['account:topup', '--amount', '5', '--json'])
     eq('confirm: a top-up asks for --yes', r.code, 2)
     r = await run(['face:doc:delete', 'd1', '--json'])
     eq('confirm: a document delete asks for --yes', r.code, 2)
@@ -964,7 +964,7 @@ async function errorsAndConfirmations() {
     r = await run(['face:doc:make', 'rushy', '--rush', '--json'])
     eq('rush 402: carries error_code and the premium', [json(r)?.error?.error_code, json(r)?.error?.rush_premium_usd], ['insufficient_credit_for_rush', 1.25])
     r = await run(['face:doc:make', 'rushy', '--rush'])
-    eq('rush 402: text names the premium and both ways on', [/Rush premium: \$1\.25/.test(r.stderr), /without --rush/.test(r.stderr), /billing:topup/.test(r.stderr)], [true, true, true])
+    eq('rush 402: text names the premium and both ways on', [/Rush premium: \$1\.25/.test(r.stderr), /without --rush/.test(r.stderr), /account:topup/.test(r.stderr)], [true, true, true])
     r = await run(['face:doc:make', 'sched', '--no-wait', '--json'])
     eq('scheduled: --json carries starts_at', typeof json(r)?.starts_at, 'string')
     eq('scheduled: no --rush sends no body', makeBodies.at(-1), '')
@@ -977,10 +977,10 @@ async function errorsAndConfirmations() {
     eq('rush too late: --json carries the code', json(r)?.error?.error_code, 'compile_already_started')
     r = await run(['face:style:make', 'alice', '--source', 'd1'])
     eq('style: no --allow-paid sends oauth_only', styleBodies.at(-1)?.oauth_only, true)
-    eq('style 409: link ChatGPT or --allow-paid', [/auth:connect openai/.test(r.stderr), /--allow-paid/.test(r.stderr)], [true, true])
+    eq('style 409: link ChatGPT or --allow-paid', [/account:connect openai/.test(r.stderr), /--allow-paid/.test(r.stderr)], [true, true])
     r = await run(['face:style:make', 'alice', '--source', 'd1', '--allow-paid'])
     eq('style: --allow-paid sends oauth_only false', styleBodies.at(-1)?.oauth_only, false)
-    eq('style 402: estimate, balance and top-up', [/up to \$3\.40/.test(r.stderr), /\$1\.25/.test(r.stderr), /billing:topup/.test(r.stderr)], [true, true, true])
+    eq('style 402: estimate, balance and top-up', [/up to \$3\.40/.test(r.stderr), /\$1\.25/.test(r.stderr), /account:topup/.test(r.stderr)], [true, true, true])
     r = await run(['face:style:make', 'alice', '--source', 'd1', '--allow-paid', '--json'])
     eq('style 402: --json carries the figures', [json(r)?.error?.error_code, json(r)?.error?.estimated_usd, json(r)?.error?.balance_usd], ['insufficient_credit_for_style_build', 3.4, 1.25])
     r = await run(['face:list', '--json'], {...base, HW_API_KEY: '', HW_TOKEN: ''})
@@ -1290,7 +1290,7 @@ eq('openai answers: choice probabilities by value', back.why.probabilities, {law
 eq('openai answers: score legend from the sent levels', back.mood.legend, {0: 'calm', 1: 'furious'})
 
 // --- refusals, error codes and duplicate top-ups --------------------------------
-eq('402 no card: no repeated sentence', refusalGuidance(402, undefined, 'No payment method on file. Add a card first.'), 'Add a card with: hw billing:card-setup')
+eq('402 no card: no repeated sentence', refusalGuidance(402, undefined, 'No payment method on file. Add a card first.'), 'Add a card with: hw account:card-add')
 eq('failure: error_code wins over the text', /No ChatGPT account is linked/.test(jobFailureMessage('sign-in expired', false, 'chatgpt_auth')), true)
 eq('failure: no code falls back to the text', /most likely expired/.test(jobFailureMessage('CHATGPT_AUTH: x', true, null)), true)
 
@@ -2299,14 +2299,14 @@ async function compileWaitTimeout() {
 }
 await compileWaitTimeout()
 
-// --- the clean start: no faces command name, no FACES_ variable, product:verb -----
+// --- the clean start: no faces command name, no FACES_ variable, tool:verb -----
 // hw replaces the faces CLI with no aliases, so an old name anywhere a person or an
 // agent reads it is a bug: in the source, the README, or any command's help.
 async function cleanStart() {
   const OLD_COMMAND = /\bfaces\s+(?:[a-z][a-z-]*:[a-z]|choices\b|decide\b|auth\b|face\b)/
   const OLD_VAR = /\bFACES_[A-Z_]+/
   const OLD_PLACES = /~\/\.faces\b|['"`]\.faces['"`]|\.faces\/state|@faces-sh\/|github\.com\/faces-sh\//
-  const OLD_TOPICS = ['compile', 'chat', 'premise', 'conversation', 'session', 'style', 'fidelity', 'benchmark']
+  const OLD_TOPICS = ['compile', 'chat', 'premise', 'conversation', 'session', 'style', 'fidelity', 'benchmark', 'auth', 'billing', 'keys']
   const files = ['README.md', 'package.json']
   const walk = (d) => { for (const e of fs.readdirSync(d, {withFileTypes: true})) { const f = path.join(d, e.name); if (e.isDirectory()) walk(f); else if (f.endsWith('.ts')) files.push(f) } }
   walk('src')
@@ -2325,12 +2325,12 @@ async function cleanStart() {
   const {Config} = await import('@oclif/core')
   const config = await Config.load(path.resolve('.'))
   const ids = config.commands.map((c) => c.id).sort()
-  eq('clean start: every command is product:verb, none under an old topic',
+  eq('clean start: every command is tool:verb, none under an old topic',
     ids.filter((id) => id !== 'help' && (!id.includes(':') || OLD_TOPICS.includes(id.split(':')[0]))), [])
   for (const id of ['face:create', 'face:list', 'face:compile', 'face:publish', 'face:share', 'face:edit', 'face:delete',
     'maestro:choices', 'maestro:decide', 'maestro:chat',
     'state:create', 'state:use', 'state:get', 'state:add', 'state:edit', 'state:delete', 'state:claim', 'state:refine', 'state:choices', 'state:decide',
-    'auth:login', 'keys:create']) {
+    'account:login', 'key:create']) {
     if (!ids.includes(id)) eq(`clean start: ${id} exists`, false, true)
   }
   const helpHits = []

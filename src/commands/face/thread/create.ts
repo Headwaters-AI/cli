@@ -31,7 +31,7 @@ export default class CompileThreadCreate extends BaseCommand {
         if (err.errorCode === 'oauth_rejected') {
           const hint = err.fallbackAvailable
             ? 'Run `hw account:preferences api_fallback true` to allow paid fallback.'
-            : 'Run `hw billing:topup` to add credits, then enable fallback with `hw account:preferences api_fallback true`.'
+            : 'Run `hw account:topup` to add credits, then enable fallback with `hw account:preferences api_fallback true`.'
           this.error(`OAuth failed: ${err.message}\n${hint}`)
         }
         this.error(`HTTP ${err.statusCode}: ${err.message}`)

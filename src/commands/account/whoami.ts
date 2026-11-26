@@ -90,7 +90,7 @@ export default class AuthWhoami extends BaseCommand {
     }
 
     if (!json) {
-      // stdout, so `hw auth:whoami | grep status` finds it.
+      // stdout, so `hw account:whoami | grep status` finds it.
       const jwtLine = !token ? 'not configured' : jwtResult ? (jwtResult.ok ? 'valid' : `failed (${jwtResult.error})`) : 'not checked (the API key works)'
       this.log('Auth diagnostic:')
       this.log(`  base_url:       ${baseUrl}`)

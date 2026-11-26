@@ -7,7 +7,6 @@ export default class BillingCardSetup extends BaseCommand {
     'Add a card: prints a secure link to save one. Nothing is charged. The new card becomes the default ' +
     'unless --no-default (the first card always does), and it is listed a few seconds after you finish.'
 
-  static aliases = ['billing:card:add']
 
   static flags = {
     ...BaseCommand.baseFlags,
@@ -36,7 +35,7 @@ export default class BillingCardSetup extends BaseCommand {
         this.log(`  ${data.checkout_url}`)
         this.log('')
         // It reaches the account through Stripe's webhook, not this call.
-        this.log('It appears a few seconds after you finish. Check with: hw billing:cards')
+        this.log('It appears a few seconds after you finish. Check with: hw account:cards')
       } else {
         this.printHuman(data)
       }

@@ -98,7 +98,7 @@ export default class AccountPreferences extends BaseCommand {
           // The server's sentence alone: the client's general guidance for this
           // code is about --oauth-only, which this command was not given.
           `HTTP 422: ${err.message.split('\n')[0]}\nOn the Free plan every request runs on credits, so api_fallback stays on. ` +
-            'It can be turned off on Connect or Pro: hw billing:subscription:activate',
+            'It can be turned off on Connect or Pro: hw account:activate',
         )
       }
       if (err instanceof HwAPIError) this.error(`HTTP ${err.statusCode}: ${err.message}`)
@@ -146,7 +146,7 @@ export default class AccountPreferences extends BaseCommand {
             ? `No ChatGPT account is linked, so on ${name} every automatic build is charged to credits.\n`
             : 'Could not check for a linked ChatGPT account, so automatic builds may be charged to credits.\n') +
         'Re-run with --allow-paid if you mean that. On Connect or Pro with ChatGPT linked they run at no charge: ' +
-        (paidPlan ? 'hw auth:connect openai' : 'hw billing:subscription:activate'),
+        (paidPlan ? 'hw account:connect openai' : 'hw account:activate'),
     )
   }
 

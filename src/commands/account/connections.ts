@@ -8,8 +8,8 @@ export default class AuthConnections extends BaseCommand {
   }
 
   static examples = [
-    '<%= config.bin %> auth:connections',
-    '<%= config.bin %> auth:connections --json',
+    '<%= config.bin %> account:connections',
+    '<%= config.bin %> account:connections --json',
   ]
 
   async run(): Promise<unknown> {

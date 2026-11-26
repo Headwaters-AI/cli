@@ -89,7 +89,7 @@ export default class FaceAvatarMake extends BaseCommand {
       this.log(
         typeof data.amount_charged_usd === 'number'
           ? `  charged $${data.amount_charged_usd.toFixed(4)}`
-          : '  charged: the response did not say how much; check hw billing:balance',
+          : '  charged: the response did not say how much; check hw account:balance',
       )
       this.log('')
       this.log(`Download it with: hw face:avatar:get ${args.face_id}`)

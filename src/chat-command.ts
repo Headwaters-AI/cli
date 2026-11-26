@@ -107,13 +107,13 @@ export async function chatRefusal(err: HwAPIError, model: string, endpoint: stri
   if (err.errorCode === 'oauth_rejected') {
     const hints: string[] = []
     const linked = await chatgptLinked(client)
-    if (linked === false) hints.push('No ChatGPT account is linked. Link one with: hw auth:connect openai')
-    else hints.push('If the ChatGPT link has lapsed, link it again with: hw auth:connect openai')
+    if (linked === false) hints.push('No ChatGPT account is linked. Link one with: hw account:connect openai')
+    else hints.push('If the ChatGPT link has lapsed, link it again with: hw account:connect openai')
     if (endpoint === RESPONSES_ENDPOINT && freeWhenConnected && linked === false) hints.push('This model is free once it is linked.')
     hints.push(
       err.fallbackAvailable
         ? 'Or allow paid fallback: hw account:preferences api_fallback true'
-        : 'Or add credits (hw billing:topup --amount <usd>) and allow paid fallback: hw account:preferences api_fallback true',
+        : 'Or add credits (hw account:topup --amount <usd>) and allow paid fallback: hw account:preferences api_fallback true',
     )
     return `OAuth failed: ${err.message}\n${hints.join('\n')}`
   }

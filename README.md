@@ -5,7 +5,7 @@ The Headwaters command line. Compile a **face** from an author's source texts, t
 steers any chat model's replies, and a decision model's typed decisions. A **state** is a proof in
 progress that your agent builds with a face, kept on the server.
 
-Every command is `product:verb`: `face:*`, `maestro:*` and `state:*`, plus the account commands.
+Every command is `tool:verb`: `face:*`, `maestro:*` and `state:*`, plus `account:*` and `key:*`.
 
 ## Installation
 
@@ -19,8 +19,8 @@ Requires Node.js >= 18.
 
 ```bash
 # Register or log in: you will be asked for your password
-hw auth:register --email you@example.com --username you
-hw auth:login --email you@example.com
+hw account:register --email you@example.com --username you
+hw account:login --email you@example.com
 
 # Create a face
 hw face:create --name "Alice" --alias alice --default-model gpt-5.4-mini \
@@ -51,8 +51,12 @@ hw face:create --name "Alice-Bob" --alias alice-bob --formula "alice | bob"
 ## Commands
 
 ```
-hw auth:login / logout / register / whoami / refresh
-hw auth:connect / disconnect / connections
+hw account:register / login / logout / whoami / refresh
+hw account:connect / disconnect / connections
+hw account:balance / topup / usage / llm-costs
+hw account:plan / subscription / activate / cancel
+hw account:cards / card-add / card-remove / card-default
+hw account:preferences / show
 
 hw face:create / list / get / edit / delete / stats / attributes / sources
 hw face:diff / neighbors / lock / unlock / publish / unpublish / share / unshare / groups
@@ -85,12 +89,7 @@ hw user:get / follow / unfollow / followers / following
 
 hw catalog:list / doctor / backup / restore
 
-hw keys:create / list / revoke / update
-
-hw billing:balance / usage / llm-costs / topup / cards / card-setup / card:default / card:remove
-hw billing:subscription / subscription:activate / subscription:plan / subscription:cancel
-
-hw account:state / preferences
+hw key:create / list / edit / revoke
 
 hw config:set / show / clear
 ```
@@ -251,7 +250,7 @@ Choices cost $0.42 per million input tokens and $1.00 per million output tokens 
 On chat and decisions the steering costs $0.42 per million input tokens plus $0.00042 a call, with no
 output charge, and the decoder its listed price plus 5%. `maestro-1-fast` is 10 times the
 `maestro-1` price, on the Maestro part only. Compiling costs $16 per million source tokens, $21 for
-a rush. Link a ChatGPT account with `hw auth:connect openai` and interviews and style builds run on
+a rush. Link a ChatGPT account with `hw account:connect openai` and interviews and style builds run on
 the ChatGPT plan. Current prices: `hw models:list --kind all`.
 
 ## License
