@@ -79,6 +79,7 @@ hw state:create --use / use / get # a state for this directory (.headwaters/stat
 hw state:add / edit / delete / claim
 hw state:refine / choices / decide # billed: refine a premise with a face, its candidates, their ranking
 hw state:items / close           # a state's items in order, closing it
+hw state:hud                     # the state in three lines; on / off / auto; --hook for the harness hooks
 
 hw models:list                    # the models you can name; --kind takes a list, or all
 hw media:list                     # the media a document can be, with what each covers
@@ -225,6 +226,36 @@ Every write takes `--as <name>`.
 `state:add --jsonl <file>` adds many premises at once, and `state:edit --note` adds a note to one.
 `state:items` lists a state's items in order, and `state:close` closes it. Like every `state:*`
 command, they work on this directory's state unless `--state-id` names another.
+
+### Keep the state in view
+
+`hw state:hud` prints the state in three short lines, the same size whatever the size of the
+proof: the root goal and how much of it is proved, the next candidate to try, what waits on the
+human, the environment or a test, and the claims (`--as <name>` shows yours). The last line is
+the command that shows the detail.
+
+```
+HUD · fs_QPSO… · "the dinner is planned" · open · 1/7 proved
+next: 1.2.1 pasta primavera · waiting: human on 1.3 · held: 1.2 builder-A
+drill: hw state:get "pasta primavera"
+```
+
+`hw state:hud --hook <event>` reads a hook event on stdin and prints that hook's output, so the
+hook files for Claude Code and Codex are one line each:
+
+| `--hook` | Hook | What it prints |
+|---|---|---|
+| `session-start` | SessionStart | the whole proof, and sets `HW_SESSION` for the session (Claude Code) |
+| `user-prompt` | UserPromptSubmit | the HUD, as added context, on each user message |
+| `post-tool` | PostToolUse | the HUD, after an `hw state:` write or every 15 tool calls |
+| `statusline` | Claude Code `statusLine` | the HUD in one line, for the human |
+| `stop` | Stop, SubagentStop | the proof's last line |
+| `session-end` | SessionEnd | nothing; releases the session's claims |
+
+`--harness codex` names the session for Codex. A hook never blocks and never fails: on any
+error it prints nothing and exits 0. `hw state:hud on`, `off` or `auto` sets when the hooks show
+the HUD, in `.headwaters/hud` next to the state file. `auto`, the default, shows it when the
+directory has a state.
 
 ## Authentication
 

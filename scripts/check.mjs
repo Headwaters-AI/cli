@@ -2347,5 +2347,100 @@ async function cleanStart() {
 }
 await cleanStart()
 
+// --- the HUD (#2091): fixed layout, toggle, which calls are writes, the post-tool throttle -------
+{
+  const {hudLines, hudStatusLine, isStateWrite, throttleStep, throttleKey, hudShows, readHudMode, contextOutput, cut, shortId} = await import('../dist/hud.js')
+  const proof = {
+    premises: [
+      {number: '1', key: 'the dinner is planned', role: 'goal', truth: 'open'},
+      {number: '1.1', key: 'the guests', truth: 'proved'},
+      {number: '1.2', key: 'the menu', role: 'goal', truth: 'open', claimed_by: 'builder-A', next_to_try: 'pasta primavera'},
+      {number: '1.2.1', key: 'pasta primavera', truth: 'open', p: 0.714},
+      {number: '1.2.2', key: 'grilled fish', truth: 'open', p: 0.3},
+      {number: '1.3', key: 'the venue is booked', role: 'goal', truth: 'open', await: 'human'},
+      {number: '1.4', key: 'each guest can eat each dish', role: 'test', truth: 'open', await: 'environment'},
+    ],
+    summary: ['Open. Next to try: 1.2.1. Proved when ...'],
+  }
+  const id = 'fs_5bDabcdefghijkl'
+  eq('hud: three lines, fixed layout', hudLines(proof, id), [
+    'HUD · fs_5bDa… · "the dinner is planned" · open · 1/7 proved',
+    'next: 1.2.1 pasta primavera (p 0.71) · waiting: human on 1.3, environment on 1.4 · held: 1.2 builder-A',
+    'drill: hw state:get "pasta primavera"',
+  ])
+  eq('hud: --as shows what you hold', hudLines(proof, id, 'builder-A')[1].endsWith('you hold: 1.2'), true)
+  eq('hud: --as holding nothing', hudLines(proof, id, 'someone')[1].endsWith('you hold: nothing'), true)
+  eq('hud: an empty state', hudLines({premises: []}, id)[0], 'HUD · fs_5bDa… · empty')
+  const proved = {premises: [{number: '1', key: 'g', truth: 'proved'}], summary: ['Proved.']}
+  eq('hud: proved, nothing next', hudLines(proved, id), ['HUD · fs_5bDa… · "g" · proved · 1/1 proved', 'next: none', 'drill: hw state:get "g"'])
+  eq('hud: a refuted root', hudLines({premises: [{number: '1', key: 'g', truth: 'refuted'}]}, id)[0].includes(' refuted '), true)
+  eq('hud: two roots', hudLines({premises: [{number: '1', key: 'a', truth: 'open'}, {number: '2', key: 'b', truth: 'proved'}]}, id)[0], 'HUD · fs_5bDa… · "a" +1 · open · 1/2 proved')
+  eq('hud: waiting on a test names the test', hudLines({premises: [{number: '1', key: 'g', truth: 'open', await: 't'}, {number: '1.1', key: 't', role: 'test', truth: 'open'}]}, id)[1], 'next: none · waiting: test 1.1 on 1')
+  const long = 'x'.repeat(200)
+  const big = {premises: [{number: '1', key: long, truth: 'open', next_to_try: long + 'y'}, {number: '1.1', key: long + 'y', truth: 'open'}]}
+  eq('hud: long keys are cut, the drill keeps the whole key', [hudLines(big, id)[0].length < 80, hudLines(big, id)[1].length < 60], [true, true])
+  eq('hud: cut', [cut('abc', 5), cut('abcdefgh', 5)], ['abc', 'abcd…'])
+  eq('hud: short id', shortId('fs_QPSOHe8tyWKtwJfgiNEvsW2A'), 'fs_QPSO…')
+  eq('hud: status line is one line, cut to the width', [hudStatusLine(proof, id).includes('\n'), hudStatusLine(proof, id, undefined, 40).length], [false, 40])
+  eq('hud: no em-dash in any line', hudLines(proof, id).join('').includes('—'), false)
+
+  const bash = (command) => ({tool_name: 'Bash', tool_input: {command}})
+  eq('hud: state writes', ['add', 'edit', 'delete', 'refine', 'choices', 'decide', 'claim'].map((v) => isStateWrite(bash(`hw state:${v} "k"`))), [true, true, true, true, true, true, true])
+  eq('hud: reads and other calls are not writes', [isStateWrite(bash('hw state:get')), isStateWrite(bash('hw state:hud')), isStateWrite(bash('ls')),
+    isStateWrite({tool_name: 'Read', tool_input: {file_path: 'hw state:add'}}), isStateWrite({}), isStateWrite(bash('npx hw state:addx'))], [false, false, false, false, false, false])
+  eq('hud: a write inside a longer command', isStateWrite(bash('cd x && HW_SESSION=1 hw state:edit "k" --status verified')), true)
+  eq('hud: a command given as a list', isStateWrite({tool_name: 'Bash', tool_input: {command: ['hw', 'state:decide', 'k']}}), true)
+
+  let counts = {}
+  const fired = []
+  for (let i = 1; i <= 16; i++) {
+    const s = throttleStep(counts, 'sess', i === 4)
+    counts = s.counts
+    if (s.inject) fired.push(i)
+  }
+  eq('hud: throttle injects on a write and after 15 calls without one', fired, [4])
+  counts = {}
+  fired.length = 0
+  for (let i = 1; i <= 31; i++) {
+    const s = throttleStep(counts, 'sess', false)
+    counts = s.counts
+    if (s.inject) fired.push(i)
+  }
+  eq('hud: throttle every 15', fired, [15, 30])
+  eq('hud: sessions count apart', throttleStep({a: 14}, 'b', false).inject, false)
+  eq('hud: a subagent counts apart', [throttleKey({session_id: 's'}), throttleKey({session_id: 's', agent_id: 'a1'})], ['s', 's:a1'])
+  let many = {}
+  for (let i = 0; i < 80; i++) many = throttleStep(many, `s${i}`, false).counts
+  eq('hud: the counter file stays small', Object.keys(many).length, 50)
+
+  eq('hud: shows', [hudShows('auto', true), hudShows('auto', false), hudShows('on', false), hudShows('off', true)], [true, false, true, false])
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-'))
+  eq('hud: no file is auto', readHudMode(tmp), 'auto')
+  fs.mkdirSync(path.join(tmp, '.headwaters'))
+  fs.writeFileSync(path.join(tmp, '.headwaters', 'hud'), 'off\n')
+  fs.mkdirSync(path.join(tmp, 'sub'))
+  eq('hud: the nearest file, from below', readHudMode(path.join(tmp, 'sub')), 'off')
+  fs.writeFileSync(path.join(tmp, '.headwaters', 'hud'), 'loud\n')
+  eq('hud: a mode it does not know is auto', readHudMode(tmp), 'auto')
+  fs.rmSync(tmp, {recursive: true})
+  // a hook never fails the agent: no state, a bad flag, a state the server cannot reach all print nothing and exit 0
+  const none = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-none-'))
+  const hook = (args, input, env = {}) => spawnSync(process.execPath, [path.resolve('bin/run.js'), 'state:hud', ...args],
+    {cwd: none, input, encoding: 'utf8', env: {...process.env, HW_STATE_ID: '', ...env}, timeout: 15000})
+  const ev = JSON.stringify({session_id: 's', cwd: none, hook_event_name: 'UserPromptSubmit', prompt: 'hi'})
+  for (const h of ['user-prompt', 'post-tool', 'statusline', 'stop', 'session-end']) {
+    const r = hook(['--hook', h], ev)
+    eq(`hud: --hook ${h} with no state prints nothing, exit 0`, [r.status, r.stdout], [0, ''])
+  }
+  const bad = hook(['--hook', 'nonsense'], ev)
+  eq('hud: a bad hook name exits 0', [bad.status, bad.stdout], [0, ''])
+  const down = hook(['--hook', 'user-prompt', '--state-id', 'fs_x'], ev, {HW_BASE_URL: 'http://127.0.0.1:9', HW_API_KEY: 'k'})
+  eq('hud: a server it cannot reach prints nothing, exit 0', [down.status, down.stdout], [0, ''])
+  const start = hook(['--hook', 'session-start'], ev)
+  eq('hud: session start with no state says how to make one', JSON.parse(start.stdout).hookSpecificOutput.additionalContext.startsWith('No state in this directory'), true)
+  fs.rmSync(none, {recursive: true})
+  eq('hud: hook output', JSON.parse(contextOutput('PostToolUse', 'x')), {hookSpecificOutput: {hookEventName: 'PostToolUse', additionalContext: 'x'}})
+}
+
 console.log(`${ran - failed}/${ran} checks passed`)
 if (failed > 0) process.exit(1)
