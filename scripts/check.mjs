@@ -527,7 +527,7 @@ async function streaming() {
         res.end(JSON.stringify({detail: "Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead."}))
         return
       }
-      res.writeHead(200, {'Content-Type': 'text/event-stream', 'X-Faces-Provider': 'openai'})
+      res.writeHead(200, {'Content-Type': 'text/event-stream', 'X-Headwaters-Provider': 'openai'})
       res.write(': keep-alive\n\n')
       res.write(': keep-alive\r\n\r\n')
       if (mode === 'late') {
@@ -548,7 +548,7 @@ async function streaming() {
     const lines = []
     for await (const l of client.stream('/v1/chat/completions', {}, {onHeaders: (h) => (seen = h)})) lines.push(l)
     eq('keep-alives skipped', lines, ['data: {"choices": [{"delta": {"cause": "hm"}}]}', 'data: {"choices": [{"delta": {"content": "hi"}}]}', 'data: [DONE]'])
-    eq('headers seen', seen['x-faces-provider'], 'openai')
+    eq('headers seen', seen['x-headwaters-provider'], 'openai')
 
     mode = 'late'
     let caught
@@ -676,7 +676,7 @@ async function rateLimited() {
     eq('free oauth-only: sentence first', free?.message.startsWith('OAuth-only is not available on Free.'), true)
 
     // A held decision: 200 and spaces first, then the JSON.
-    replies = [[200, {'x-faces-held': '1'}, '      \n   ' + JSON.stringify({answers: {a: {yes: 0.7}}})]]
+    replies = [[200, {'x-headwaters-held': '1'}, '      \n   ' + JSON.stringify({answers: {a: {yes: 0.7}}})]]
     eq('held body parses past the spaces', await client.post('/v1/systemone', {body: {}}), {answers: {a: {yes: 0.7}}})
   } finally {
     srv.close()
@@ -1455,7 +1455,7 @@ async function heldChatOverHttp() {
   const srv = http.createServer((req, res) => {
     req.resume()
     req.on('end', () => {
-      res.writeHead(200, {'Content-Type': 'application/json', 'X-Faces-Held': '1'})
+      res.writeHead(200, {'Content-Type': 'application/json', 'X-Headwaters-Held': '1'})
       res.write('   ')
       res.end(`  ${reply}`)
     })
@@ -1477,7 +1477,7 @@ async function heldChatOverHttp() {
     }
     reply = JSON.stringify({object: 'chat.completion', choices: [{message: {content: 'hi'}}], usage: {total_tokens: 3}})
     const ok = await postChat(client, '/v1/chat/completions', {model: '@ada:maestro-1/x'})
-    eq('held answer read through the spaces', [ok.data.choices[0].message.content, ok.headers['x-faces-held'], ok.headers['x-faces-cost-usd']], ['hi', '1', undefined])
+    eq('held answer read through the spaces', [ok.data.choices[0].message.content, ok.headers['x-headwaters-held'], ok.headers['x-headwaters-cost-usd']], ['hi', '1', undefined])
   } finally {
     srv.close()
   }
@@ -1853,7 +1853,7 @@ async function conversationsOverHttp() {
     req.on('end', () => {
       const send = (status, body) => { res.writeHead(status, {'content-type': 'application/json'}); res.end(JSON.stringify(body)) }
       const body = b ? JSON.parse(b) : undefined
-      seen.push({method: req.method, url: req.url, body, session: req.headers['x-faces-session']})
+      seen.push({method: req.method, url: req.url, body, session: req.headers['x-headwaters-session']})
       // the state's routes answer a state.reply (writes) or a state.proof (reads); a key
       // 'held' is another's claim; 'late' and 'slow' are held open
       const fm = /^\/v1\/states\/(fs_\w+)\/(premises|premise|proof|note|claim|release|release-session)(\?|$)/.exec(req.url)
@@ -1863,7 +1863,7 @@ async function conversationsOverHttp() {
         const reply = (result) => ({object: 'state.reply', result, summary: ['Open. Proved when 1 is refined.'],
           text: `${result}\n\nOpen. Proved when 1 is refined.`})
         if (body?.key === 'late' || body?.key === 'slow') {
-          res.writeHead(200, {'content-type': 'application/json', 'x-faces-held': '1'})
+          res.writeHead(200, {'content-type': 'application/json', 'x-headwaters-held': '1'})
           res.write('   ')
           const late = {detail: 'the face cannot be read: @gone', error: {message: 'the face cannot be read: @gone', type: 'invalid_request_error', param: null, code: '409', status: 409}}
           return setTimeout(() => res.end(JSON.stringify(body.key === 'late' ? late : reply('added slowly'))), 50)
@@ -2104,7 +2104,7 @@ async function conversationsOverHttp() {
     r = await runIn(dir, ['state:claim', 'the menu'])
     eq('state:claim needs who', [r.code !== 0, /Name who claims it/.test(r.out)], [true, true])
     r = await runIn(dir, ['state:add', 'late', 'x'])
-    eq('a held refusal (200, X-Faces-Held, held_error): exit 1, its message on stderr', [r.code, r.stdout, /the face cannot be read: @gone/.test(r.out)], [1, '', true])
+    eq('a held refusal (200, X-Headwaters-Held, held_error): exit 1, its message on stderr', [r.code, r.stdout, /the face cannot be read: @gone/.test(r.out)], [1, '', true])
     r = await runIn(dir, ['state:add', 'late', 'x', '--json'])
     eq('a held refusal in --json: exit 1, the real status', [r.code, JSON.parse(r.out).error], [1, {message: 'the face cannot be read: @gone', status: 409}])
     r = await runIn(dir, ['state:add', 'slow', 'x'])

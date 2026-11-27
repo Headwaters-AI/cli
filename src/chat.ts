@@ -123,10 +123,10 @@ export function replyText(body: Record<string, unknown>, endpoint: string): stri
 /** The cost and billing headers, for --json. */
 export function chatMeta(headers: Record<string, string>, endpoint: string, model: string): Record<string, string> {
   const meta: Record<string, string> = {}
-  if (headers['x-faces-provider']) meta.provider = headers['x-faces-provider']
-  if (headers['x-faces-cost-usd']) meta.cost_usd = headers['x-faces-cost-usd']
+  if (headers['x-headwaters-provider']) meta.provider = headers['x-headwaters-provider']
+  if (headers['x-headwaters-cost-usd']) meta.cost_usd = headers['x-headwaters-cost-usd']
   // oauth (the linked ChatGPT subscription paid) or credits.
-  if (headers['x-faces-billing']) meta.billing = headers['x-faces-billing']
+  if (headers['x-headwaters-billing']) meta.billing = headers['x-headwaters-billing']
   meta.endpoint = endpoint
   meta.model = model
   return meta

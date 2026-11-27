@@ -388,7 +388,7 @@ export const STREAM_FLAG_DESCRIPTION =
  * Send a chat that is not streamed to `endpoint`, and turn a refusal that
  * arrives in a held response's body into the error it is.
  *
- * A face chat that runs long is answered 200 with `X-Faces-Held: 1` before
+ * A face chat that runs long is answered 200 with `X-Headwaters-Held: 1` before
  * it is done, so a refusal after that comes as the body ({@link heldChatError})
  * rather than as the status. Thrown here, it is printed like any other
  * refusal instead of as an empty reply.
@@ -591,11 +591,11 @@ export const MEDIUM_MISSING_MESSAGE =
  * The ChatGPT plan route strips params it rejects (`max_output_tokens`,
  * `temperature`), so the same flag is honoured on the paid path and ignored on
  * the free one: a difference the caller cannot see and did not choose. The
- * server announces it in `x-faces-dropped-params`; without that header a client
+ * server announces it in `x-headwaters-dropped-params`; without that header a client
  * could only guess, since which route ran is decided per request.
  */
 export function warnDroppedParams(headers: Record<string, string>, flagFor: Record<string, string>): void {
-  const raw = headers['x-faces-dropped-params']
+  const raw = headers['x-headwaters-dropped-params']
   if (!raw) return
   const flags = raw
     .split(',')

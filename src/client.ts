@@ -542,7 +542,7 @@ export class HwClient {
    * success or refusal, as {object: "state.reply", text, ...}, and `text` is what is printed,
    * so a refusal in that shape comes back rather than being thrown. Anything else that is not
    * ok (an auth failure, a missing route) is thrown as usual. Sends HEADWATERS_SESSION as the
-   * X-Faces-Session header, which the server records as the writer's session.
+   * X-Headwaters-Session header, which the server records as the writer's session.
    */
   async stateReply(
     method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
@@ -555,7 +555,7 @@ export class HwClient {
     const withBody = method === 'POST' || method === 'PATCH'
     if (withBody) headers['Content-Type'] = 'application/json'
     const session = process.env.HEADWATERS_SESSION?.trim()
-    if (session) headers['X-Faces-Session'] = session
+    if (session) headers['X-Headwaters-Session'] = session
     const resp = await this.send(path, url, {
       method,
       headers,
@@ -565,8 +565,8 @@ export class HwClient {
       const body = (await resp.json()) as Record<string, unknown>
       // a model route held open past ~40s has already sent its 200, so a refusal after
       // that arrives as `held_error` ({detail, error: {message, status, ...}}), with
-      // X-Faces-Held: 1. It is the refusal, with its real status.
-      const held = resp.headers.get('x-faces-held') === '1' && body?.object !== 'state.reply' ? heldChatError(body) : undefined
+      // X-Headwaters-Held: 1. It is the refusal, with its real status.
+      const held = resp.headers.get('x-headwaters-held') === '1' && body?.object !== 'state.reply' ? heldChatError(body) : undefined
       if (held) {
         this.lastError = held
         return {status: held.statusCode, ok: false, data: {...body, error: held.message, text: held.message, held: true}}
@@ -852,7 +852,7 @@ export function streamErrorOf(data: string): HwAPIError | undefined {
  * answer.
  *
  * A face chat that is not streamed and runs past about 40 seconds is held
- * open: the server sends 200 at once with `X-Faces-Held: 1`, keeps the
+ * open: the server sends 200 at once with `X-Headwaters-Held: 1`, keeps the
  * connection alive with spaces, and writes the JSON when it is done. A JSON
  * parser skips the spaces. A refusal after that point arrives as the body,
  * with the real status in `error.status`:
