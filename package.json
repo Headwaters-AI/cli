@@ -1,6 +1,6 @@
 {
   "name": "@headwaters-ai/cli",
-  "version": "1.3.0",
+  "version": "0.0.1",
   "description": "hwai: the Headwaters CLI. Compile faces from source texts, ask them what they would do with Maestro, and build states",
   "type": "module",
   "author": "Headwaters Lab Inc.",
