@@ -11,7 +11,7 @@ export default class PremiseClaim extends ReplyCommand {
   static examples = [
     '<%= config.bin %> <%= command.id %> "the menu" builder-A',
     '<%= config.bin %> <%= command.id %> "the menu" --release',
-    '<%= config.bin %> <%= command.id %> --release --session "$HW_SESSION"',
+    '<%= config.bin %> <%= command.id %> --release --session "$HEADWATERS_SESSION"',
   ]
 
   static flags = {
@@ -32,9 +32,9 @@ export default class PremiseClaim extends ReplyCommand {
     const client = this.makeClient(flags)
     const id = this.stateId(flags)
     if (flags.release && flags.session && !args.key) return this.reply(client, 'POST', this.statePath(id, '/release-session'), {body: {session: flags.session}})
-    if (!args.key) this.error('Name the premise: hw state:claim "<key>" <who>')
+    if (!args.key) this.error('Name the premise: hwai state:claim "<key>" <who>')
     if (flags.release) return this.reply(client, 'POST', this.statePath(id, '/release'), {body: compact({key: args.key, agent: args.who})})
-    if (!args.who) this.error('Name who claims it: hw state:claim "<key>" <who>')
+    if (!args.who) this.error('Name who claims it: hwai state:claim "<key>" <who>')
     return this.reply(client, 'POST', this.statePath(id, '/claim'), {body: compact({key: args.key, agent: args.who, ttl_seconds: flags.ttl})})
   }
 }

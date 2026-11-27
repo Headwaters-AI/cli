@@ -21,13 +21,13 @@ export default class FaceEdit extends BaseCommand {
       description:
         'New formula, making the face a composite. Pass an empty string to turn a composite back into an ordinary ' +
         'face. Refused on a face with compiled sources of its own, or one used in another composite: make a new ' +
-        'composite with hw face:create --formula instead.',
+        'composite with hwai face:create --formula instead.',
     }),
     attr: Flags.string({
       description:
         'Update attribute KEY=VALUE (repeatable). age, gender and location take a bare value ("45", "Lisbon, ' +
         'Portugal"); identity, education, occupation, religion, family, relationships, health, languages and ' +
-        'background take a short sentence. Any other key is refused, and then nothing is saved. See hw face:attributes.',
+        'background take a short sentence. Any other key is refused, and then nothing is saved. See hwai face:attributes.',
       multiple: true,
     }),
     tool: Flags.string({description: 'Tool names to set (replaces list, repeatable). The server stores any name without checking it, so spell it as the tool expects.', multiple: true}),
@@ -56,7 +56,7 @@ export default class FaceEdit extends BaseCommand {
     if (flags.attr && flags.attr.length > 0) {
       const parsed: Record<string, string> = {}
       for (const a of flags.attr) {
-        if (!a.includes('=') || !a.slice(0, a.indexOf('=')).trim()) this.error(`Attributes must be KEY=VALUE, got: ${a}. See the keys with: hw face:attributes`)
+        if (!a.includes('=') || !a.slice(0, a.indexOf('=')).trim()) this.error(`Attributes must be KEY=VALUE, got: ${a}. See the keys with: hwai face:attributes`)
         const idx = a.indexOf('=')
         parsed[a.slice(0, idx).trim()] = a.slice(idx + 1).trim()
       }
@@ -95,12 +95,12 @@ export default class FaceEdit extends BaseCommand {
         data = await client.patch(`/v1/faces/${seg(args.face_id)}`, {body: payload})
       } catch (err) {
         if (err instanceof HwAPIError && err.statusCode === 404) {
-          this.error(isMeAlias(args.face_id) ? ME_MISSING : `No face '${args.face_id}' on this account. List yours with: hw face:list`)
+          this.error(isMeAlias(args.face_id) ? ME_MISSING : `No face '${args.face_id}' on this account. List yours with: hwai face:list`)
         }
         if (err instanceof HwAPIError && err.statusCode === 409 && payload.formula) {
           this.error(
             `HTTP 409: ${err.message}\n` +
-              `Make a new composite instead: hw face:create --alias <new-alias> --name <name> --formula "${payload.formula}"`,
+              `Make a new composite instead: hwai face:create --alias <new-alias> --name <name> --formula "${payload.formula}"`,
           )
         }
         if (err instanceof HwAPIError) this.error(`HTTP ${err.statusCode}: ${err.message}`)

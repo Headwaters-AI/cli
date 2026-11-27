@@ -99,9 +99,9 @@ export function similarityText(v: unknown): string {
 
 /** File types the text commands cannot read, with where each one should go. */
 export const BINARY_HINTS: Record<string, string> = {
-  '.pdf': 'PDF is supported, but not by this command. Use: hw face:compile <alias> --file <path> --medium <medium>',
-  '.docx': 'Word documents are supported, but not by this command. Use: hw face:compile <alias> --file <path> --medium <medium>',
-  '.doc': "Legacy '.doc' is not supported. Open it in Word or Pages and save as .docx, then upload that with: hw face:compile <alias> --file <path> --medium <medium>",
+  '.pdf': 'PDF is supported, but not by this command. Use: hwai face:compile <alias> --file <path> --medium <medium>',
+  '.docx': 'Word documents are supported, but not by this command. Use: hwai face:compile <alias> --file <path> --medium <medium>',
+  '.doc': "Legacy '.doc' is not supported. Open it in Word or Pages and save as .docx, then upload that with: hwai face:compile <alias> --file <path> --medium <medium>",
   '.pages': 'Pages documents are not supported. Export it as text or PDF first.',
   '.rtf': 'RTF is not supported. Convert it to plain text first (e.g. `textutil -convert txt file.rtf`).',
   '.key': 'Keynote files are not supported. Export the text first.',
@@ -203,7 +203,7 @@ export function withoutWarnings(data: unknown): unknown {
 
 /** The command that uploads `file` as a thread, keeping only the face's turns. */
 function threadUploadCommand(alias: string, file?: string): string {
-  return `  hw face:compile ${alias} --file ${file ?? 'FILE'} --kind thread --face-speaker NAME`
+  return `  hwai face:compile ${alias} --file ${file ?? 'FILE'} --kind thread --face-speaker NAME`
 }
 
 /**
@@ -283,7 +283,7 @@ export function compileCostNote(tokens: unknown, ratePerMillion: number): string
   return (
     `This source is ${tokens.toLocaleString('en-US')} tokens. Compiling it costs about $${usdCost.toFixed(2)} on credits ` +
     `($${ratePerMillion} per million source tokens); on Connect or Pro the month's compile allowance is used first ` +
-    '(see hw face:compile:stats).'
+    '(see hwai face:compile:stats).'
   )
 }
 
@@ -388,7 +388,7 @@ export const STREAM_FLAG_DESCRIPTION =
  * Send a chat that is not streamed to `endpoint`, and turn a refusal that
  * arrives in a held response's body into the error it is.
  *
- * A face chat that runs long is answered 200 with `X-Faces-Held: 1` before
+ * A face chat that runs long is answered 200 with `X-Headwaters-Held: 1` before
  * it is done, so a refusal after that comes as the body ({@link heldChatError})
  * rather than as the status. Thrown here, it is printed like any other
  * refusal instead of as an empty reply.
@@ -464,15 +464,15 @@ export function compileHint(face: string, recompile: boolean, verb = 'answer'): 
   if (/[|&^()]/.test(face) || /\S\s+\S/.test(face)) {
     return recompile
       ? `Every face in ${face} needs recompiling before it can ${verb}: compile one of each one's sources again.`
-      : `Every face in ${face} needs something compiled: hw face:compile <alias> --file <file> for each.`
+      : `Every face in ${face} needs something compiled: hwai face:compile <alias> --file <file> for each.`
   }
   if (face.includes(':')) {
     return recompile ? `${face} needs recompiling by its owner before it can ${verb}.` : `${face} has nothing compiled yet; that is for its owner to do.`
   }
   return recompile
     ? `${face} needs recompiling before it can ${verb}: compile one of its sources again ` +
-        `(list them with: hw face:sources ${face}). Asking again as it is will not help.`
-    : `Give it a first source: hw face:compile ${face} --file <file>. A saved composite needs one on each face in its formula.`
+        `(list them with: hwai face:sources ${face}). Asking again as it is will not help.`
+    : `Give it a first source: hwai face:compile ${face} --file <file>. A saved composite needs one on each face in its formula.`
 }
 
 /**
@@ -520,14 +520,14 @@ export function isMaxTokensRenameError(message: string): boolean {
 
 /**
  * The media, by name. The full list, with what each covers, is GET /v1/media
- * (hw media:list), so it is read from there rather than repeated here.
+ * (hwai media:list), so it is read from there rather than repeated here.
  *
  * A subcategory is not a spelling that works: `keynote`, `sms` and the like are
  * each a 422 naming every medium, so naming them as inputs here would be sending
  * people into one.
  */
 const MEDIUM_LIST =
-  'What sort of writing this is, spelled exactly as hw media:list names it: email, essay, speech, ' +
+  'What sort of writing this is, spelled exactly as hwai media:list names it: email, essay, speech, ' +
   'journal entry, script and the rest (25 in all). A subcategory such as keynote is not a medium: send ' +
   'the medium it belongs to (speech). other is for writing that is none of the named forms, read as ' +
   'prose with no form-specific conventions assumed.'
@@ -539,12 +539,12 @@ const MEDIUM_LIST =
 export const DOCUMENT_VS_THREAD =
   'A document is the face\'s own writing (an essay, letter, paper, book or poem), and every word ' +
   'in it is read as theirs. An interview, transcript or dialogue is a thread: upload it with ' +
-  'hw face:compile ALIAS --file FILE --kind thread --face-speaker NAME, so only the face\'s ' +
+  'hwai face:compile ALIAS --file FILE --kind thread --face-speaker NAME, so only the face\'s ' +
   'turns are used.'
 
 export const SESSION_FLAG_DESCRIPTION =
   'The old name for --conversation, still accepted: add this turn to a session (a conversation), by id ' +
-  '(from hw state:create). The session must be with this face.'
+  '(from hwai state:create). The session must be with this face.'
 
 
 
@@ -579,11 +579,11 @@ export const MEDIUM_REQUIRED_DESCRIPTION =
  */
 export const MEDIUM_MISSING_MESSAGE =
   'Say what this writing is with --medium: a document cannot be saved without one.\n' +
-  'One of the media hw media:list names (email, essay, speech, journal entry, script and the rest).\n' +
+  'One of the media hwai media:list names (email, essay, speech, journal entry, script and the rest).\n' +
   '`other` is for writing that is none of those: it compiles, and is read as prose with no ' +
   'form-specific conventions assumed. It is the honest answer when nothing fits, and the wrong ' +
   'answer for a letter or a memo, which are forms with rules of their own.\n' +
-  'A document saved before this was required is declared with: hw face:doc:edit <id> --medium <medium>.'
+  'A document saved before this was required is declared with: hwai face:doc:edit <id> --medium <medium>.'
 
 /**
  * Warn when the server dropped request parameters before forwarding.
@@ -591,11 +591,11 @@ export const MEDIUM_MISSING_MESSAGE =
  * The ChatGPT plan route strips params it rejects (`max_output_tokens`,
  * `temperature`), so the same flag is honoured on the paid path and ignored on
  * the free one: a difference the caller cannot see and did not choose. The
- * server announces it in `x-faces-dropped-params`; without that header a client
+ * server announces it in `x-headwaters-dropped-params`; without that header a client
  * could only guess, since which route ran is decided per request.
  */
 export function warnDroppedParams(headers: Record<string, string>, flagFor: Record<string, string>): void {
-  const raw = headers['x-faces-dropped-params']
+  const raw = headers['x-headwaters-dropped-params']
   if (!raw) return
   const flags = raw
     .split(',')
@@ -800,18 +800,18 @@ export function faceStyles(face: {styles?: unknown}): string[] {
  */
 const CORPUS_THREAD_FIX =
   'This is a corpus thread, uploaded material for building a style rather than a thread to compile. Build a ' +
-  'style from it with hw face:style:make, or upload the same material with --kind thread to compile it.'
+  'style from it with hwai face:style:make, or upload the same material with --kind thread to compile it.'
 
 export const COMPILE_BLOCKED_FIX: Record<string, string> = {
-  no_medium: 'Say what it is, then compile again: hw face:doc:edit <id> --medium essay',
-  empty: 'There is nothing to compile. Add content with: hw face:doc:edit <id> --file <path>',
+  no_medium: 'Say what it is, then compile again: hwai face:doc:edit <id> --medium essay',
+  empty: 'There is nothing to compile. Add content with: hwai face:doc:edit <id> --file <path>',
   no_user_messages:
     'Nothing in it was written by the subject, so there is nothing to compile. A fresh interview holds ' +
     'only the interviewer question; it becomes compilable on the first answer.',
   corpus_thread: CORPUS_THREAD_FIX,
   // A second /make of an unchanged, compiled source; nothing was charged.
   already_compiled:
-    'To compile it again: edit it, or hw face:doc:reset <id> (face:thread:reset for a thread) ' +
+    'To compile it again: edit it, or hwai face:doc:reset <id> (face:thread:reset for a thread) ' +
     'and then make it.',
 }
 
@@ -1125,7 +1125,7 @@ export function readableLimit(n: unknown, unit = ''): string {
 export const RUSH_FLAG_DESCRIPTION =
   'Start the compile as soon as possible rather than at its scheduled start. The rush rate applies only if ' +
   'it starts before that scheduled start; one that starts at or after it pays the standard rate. A face runs ' +
-  'at most 3 compiles at once, rushed or not; more wait their turn. hw face:compile:stats shows both rates. ' +
+  'at most 3 compiles at once, rushed or not; more wait their turn. hwai face:compile:stats shows both rates. ' +
   'A rush covered by a plan\'s compile allowance pays only the difference, from credit. Where a compile ' +
   'starts at once anyway, this changes nothing and costs nothing extra.'
 

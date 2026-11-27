@@ -44,7 +44,7 @@ export default class FacePublish extends BaseCommand {
     if (this.jsonEnabled()) return data
     this.log(`'${args.alias}' is published.`)
     if (data.handle) this.log(`Anyone can chat it as: ${data.handle}@<model>`)
-    this.log(`Unpublish with: hw face:unpublish ${args.alias}`)
+    this.log(`Unpublish with: hwai face:unpublish ${args.alias}`)
     return data
   }
 }

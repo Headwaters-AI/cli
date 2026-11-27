@@ -21,7 +21,7 @@ export default class StyleRevert extends BaseCommand {
     ...BaseCommand.baseFlags,
     medium: Flags.string({
       description:
-        'Which style to step back, when the face has more than one. See hw face:style:versions <alias>.',
+        'Which style to step back, when the face has more than one. See hwai face:style:versions <alias>.',
     }),
     yes: Flags.boolean({description: 'Skip confirmation', default: false}),
   }
@@ -41,7 +41,7 @@ export default class StyleRevert extends BaseCommand {
       this.error(
         `This changes the style '${args.alias}' applies${flags.medium ? ` for ${flags.medium}` : ''}, straight away. ` +
           'Re-run with --yes to confirm.\n' +
-          `See what it would go back to: hw face:style:versions ${args.alias}`,
+          `See what it would go back to: hwai face:style:versions ${args.alias}`,
       )
     }
 
@@ -60,7 +60,7 @@ export default class StyleRevert extends BaseCommand {
         // choose between, or nothing left to step back to. Pass them through
         // and add only the command that answers them.
         if (err.statusCode === 409) {
-          this.error(`HTTP 409: ${err.message}\nSee what is there: hw face:style:versions ${args.alias}`)
+          this.error(`HTTP 409: ${err.message}\nSee what is there: hwai face:style:versions ${args.alias}`)
         }
         this.error(`HTTP ${err.statusCode}: ${err.message}`)
       }
@@ -79,7 +79,7 @@ export default class StyleRevert extends BaseCommand {
     // two kept versions, not a walk backwards. Name the version it goes back to
     // so the user does not have to hold it in their head.
     const back = from === undefined ? '' : ` to return to version ${from}`
-    this.log(`Run it again${back}. List versions: hw face:style:versions ${args.alias}`)
+    this.log(`Run it again${back}. List versions: hwai face:style:versions ${args.alias}`)
     return data
   }
 }

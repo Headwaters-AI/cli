@@ -55,7 +55,7 @@ export function choicesLines(data: ChoicesResponse): string[] {
     })
     if (data.into?.premise) {
       lines.push('', `Written into the state as premises that ${data.into.premise} rests on (${data.into.kind ?? 'or'} edges, ` +
-        `side node ${data.into.side_node ?? '-'}). Weigh them: hw state:decide ` +
+        `side node ${data.into.side_node ?? '-'}). Weigh them: hwai state:decide ` +
         `${JSON.stringify(data.into.premise)} --face @<face>`)
     } else if (data.choices_item) {
       lines.push('', `Added to the state as ${data.choices_item}. Name an option id (or ${data.choices_item} for all of them) ` +
@@ -74,13 +74,13 @@ export function choicesLines(data: ChoicesResponse): string[] {
 export function choicesHint(status: number, message: string, model: string): string | undefined {
   const face = (parseModel(model).faces ?? model).replace(/^@/, '').replace('~', ':')
   if (status === 422 && /at most 3,000/.test(message)) {
-    return 'Put the situation in a state, one premise per fact (hw state:create --use, then hw state:add), and ask with hw state:choices.'
+    return 'Put the situation in a state, one premise per fact (hwai state:create --use, then hwai state:add), and ask with hwai state:choices.'
   }
-  if (status === 409 && /nothing compiled/i.test(message)) return `Give it a first source: hw face:compile ${face} --file <file>.`
-  if (status === 409 && /compiled before/i.test(message)) return `Recompile one of its sources (list them with: hw face:sources ${face}).`
+  if (status === 409 && /nothing compiled/i.test(message)) return `Give it a first source: hwai face:compile ${face} --file <file>.`
+  if (status === 409 && /compiled before/i.test(message)) return `Recompile one of its sources (list them with: hwai face:sources ${face}).`
   if (status === 422 && /depends_on` names no premise or decision/.test(message)) {
-    return 'Name premise keys, decision ids and choices ids already in the state (hw state:items).'
+    return 'Name premise keys, decision ids and choices ids already in the state (hwai state:items).'
   }
-  if (status === 404 && /state/i.test(message)) return 'A state expires 30 days after it was last used. Start another with: hw state:create'
+  if (status === 404 && /state/i.test(message)) return 'A state expires 30 days after it was last used. Start another with: hwai state:create'
   return undefined
 }

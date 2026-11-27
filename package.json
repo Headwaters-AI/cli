@@ -1,7 +1,7 @@
 {
   "name": "@headwaters-ai/cli",
-  "version": "1.3.0",
-  "description": "hw: the Headwaters CLI. Compile faces from source texts, ask them what they would do with Maestro, and build states",
+  "version": "0.0.1",
+  "description": "hwai: the Headwaters CLI. Compile faces from source texts, ask them what they would do with Maestro, and build states",
   "type": "module",
   "author": "Headwaters Lab Inc.",
   "license": "MIT",
@@ -14,10 +14,10 @@
     "url": "https://github.com/Headwaters-AI/cli/issues"
   },
   "bin": {
-    "hw": "./bin/run.js"
+    "hwai": "./bin/run.js"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   },
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.json",
@@ -38,15 +38,15 @@
     "typescript": "^5"
   },
   "oclif": {
-    "bin": "hw",
+    "bin": "hwai",
     "dirname": "headwaters",
     "commands": "./dist/commands",
     "plugins": [
       "@oclif/plugin-help"
     ],
     "topics": {
-      "auth": {
-        "description": "Login, logout, register, and identity"
+      "account": {
+        "description": "Your account: sign in, plan, credits, cards, connections and preferences"
       },
       "face": {
         "description": "Faces: create, compile, list, share, publish and manage them"
@@ -87,20 +87,8 @@
       "group:tag": {
         "description": "Tags on a group"
       },
-      "keys": {
+      "key": {
         "description": "Manage API keys (JWT required)"
-      },
-      "billing": {
-        "description": "Credits, subscription, and usage"
-      },
-      "billing:card": {
-        "description": "Saved payment cards"
-      },
-      "billing:subscription": {
-        "description": "Your plan: show, subscribe, switch and cancel"
-      },
-      "account": {
-        "description": "Account-level operations"
       },
       "catalog": {
         "description": "Local face catalog management"

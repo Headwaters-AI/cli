@@ -26,7 +26,7 @@ export default class FaceTagAdd extends BaseCommand {
     } catch (err) {
       if (err instanceof HwAPIError) {
         if (err.statusCode === 403) {
-          this.error(`Forbidden: face '${args.alias}' is not owned by the current account. Run \`hw catalog:doctor --fix\` to sync.`)
+          this.error(`Forbidden: face '${args.alias}' is not owned by the current account. Run \`hwai catalog:doctor --fix\` to sync.`)
         }
         this.error(`HTTP ${err.statusCode}: ${err.message}`)
       }

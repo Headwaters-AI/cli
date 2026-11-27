@@ -34,7 +34,7 @@ export default class FidelitySaveThread extends BaseCommand {
 
     if (this.jsonEnabled()) return data
     this.log(`${data.created ? 'Saved as' : 'Already saved as'} thread ${data.thread_id}`)
-    this.log(`Compile it into the face: hw face:thread:make ${data.thread_id}`)
+    this.log(`Compile it into the face: hwai face:thread:make ${data.thread_id}`)
     return data
   }
 }

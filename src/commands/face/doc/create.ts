@@ -7,7 +7,7 @@ export default class CompileDocCreate extends BaseCommand {
   static description =
     'Submit a document to a face. A document is the face\'s own writing, and every word in it is read ' +
     'as theirs. An interview, transcript or dialogue is a thread: upload it with ' +
-    'hw face:compile ALIAS --file FILE --kind thread --face-speaker NAME.'
+    'hwai face:compile ALIAS --file FILE --kind thread --face-speaker NAME.'
 
   static flags = {
     ...BaseCommand.baseFlags,

@@ -55,7 +55,7 @@ export default class FaceAvatarList extends BaseCommand {
       const own = (await ownsFace(client, args.face_id)) !== false
       if (rows.length === 0) {
         this.log(`${data.alias} has no generated avatar yet.`)
-        if (own) this.log('Make one with: hw face:avatar:make ' + args.face_id + ' --allow-paid')
+        if (own) this.log('Make one with: hwai face:avatar:make ' + args.face_id + ' --allow-paid')
         return data
       }
 
@@ -78,7 +78,7 @@ export default class FaceAvatarList extends BaseCommand {
         this.log('')
         this.log(
           `${stale} version(s) no longer match the face as it is compiled now. Regenerating bills, so this is only ` +
-            'worth doing if the picture matters: hw face:avatar:make ' + args.face_id + ' --allow-paid',
+            'worth doing if the picture matters: hwai face:avatar:make ' + args.face_id + ' --allow-paid',
         )
       }
     }

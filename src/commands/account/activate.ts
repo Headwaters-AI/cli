@@ -1,14 +1,13 @@
 import {Flags} from '@oclif/core'
-import {BaseCommand} from '../../../base.js'
-import {HwAPIError} from '../../../client.js'
-import {PAID_PLANS, PLAN_PRICE, PaidPlan, planName} from '../../../billing.js'
+import {BaseCommand} from '../../base.js'
+import {HwAPIError} from '../../client.js'
+import {PAID_PLANS, PLAN_PRICE, PaidPlan, planName} from '../../billing.js'
 
 export default class BillingSubscriptionActivate extends BaseCommand {
   static description =
     'Subscribe to Connect ($17/month) or Pro ($49/month) from the Free plan, or reactivate a subscription ' +
-    'that is set to cancel. Already subscribed? Change plan with billing:subscription:plan instead.'
+    'that is set to cancel. Already subscribed? Change plan with account:plan instead.'
 
-  static aliases = ['billing:subscribe']
 
   static examples = [
     '<%= config.bin %> <%= command.id %> --plan connect',
@@ -70,14 +69,14 @@ export default class BillingSubscriptionActivate extends BaseCommand {
       if (plan === 'team') this.error('Your plan is managed by Headwaters, so there is nothing to subscribe to.')
       if (cancelAtPeriodEnd) {
         this.error(
-          `Your ${planName(plan)} plan is set to cancel. Keep it first with: hw billing:subscription:activate\n` +
-            `Then, to change to ${planName(want)}: hw billing:subscription:plan ${want}`,
+          `Your ${planName(plan)} plan is set to cancel. Keep it first with: hwai account:activate\n` +
+            `Then, to change to ${planName(want)}: hwai account:plan ${want}`,
         )
       }
 
       this.error(
         `You already subscribe to ${planName(plan)}. To change to ${planName(want)}, with proration:\n` +
-          `  hw billing:subscription:plan ${want}`,
+          `  hwai account:plan ${want}`,
       )
     }
 
@@ -86,7 +85,7 @@ export default class BillingSubscriptionActivate extends BaseCommand {
       data = await client.post(`/v1/billing/checkout?plan=${want}&source=cli`, {requireJwt: true})
     } catch (err) {
       if (err instanceof HwAPIError) {
-        if (err.statusCode === 409) this.error(`HTTP 409: ${err.message}\nChange plan with: hw billing:subscription:plan ${want}`)
+        if (err.statusCode === 409) this.error(`HTTP 409: ${err.message}\nChange plan with: hwai account:plan ${want}`)
         this.error(`HTTP ${err.statusCode}: ${err.message}`)
       }
       throw err
@@ -101,7 +100,7 @@ export default class BillingSubscriptionActivate extends BaseCommand {
       this.log('Complete payment at this link (it takes a promo code too):')
       this.log(`  ${url}`)
       this.log('')
-      this.log('After payment, check with: hw billing:subscription')
+      this.log('After payment, check with: hwai account:subscription')
     }
 
     return {status: 'checkout_created', plan: want, checkout_url: url}

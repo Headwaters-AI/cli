@@ -9,7 +9,7 @@ export default class BillingTopup extends BaseCommand {
   static flags = {
     ...BaseCommand.baseFlags,
     amount: Flags.string({description: 'Top-up amount in USD (min $1)', required: true}),
-    card: Flags.string({description: 'Charge this saved card (pm_..., from hw billing:cards) instead of the default'}),
+    card: Flags.string({description: 'Charge this saved card (pm_..., from hwai account:cards) instead of the default'}),
     yes: Flags.boolean({description: 'Charge without asking first', default: false}),
     'allow-duplicate': Flags.boolean({
       description:
@@ -57,7 +57,7 @@ export default class BillingTopup extends BaseCommand {
 
   private fail(err: unknown, card?: string): never {
     if (err instanceof HwAPIError) {
-      if (err.statusCode === 404 && card) this.error(`HTTP 404: ${err.message}\nList your cards with: hw billing:cards`)
+      if (err.statusCode === 404 && card) this.error(`HTTP 404: ${err.message}\nList your cards with: hwai account:cards`)
       this.error(`HTTP ${err.statusCode}: ${err.message}`)
     }
     throw err

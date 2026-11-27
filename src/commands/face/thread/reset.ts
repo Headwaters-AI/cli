@@ -30,7 +30,7 @@ export default class CompileThreadReset extends BaseCommand {
     }
 
     if (!this.jsonEnabled()) {
-      this.log(`Reset. Recompile with: hw face:thread:make ${args.thread_id}`)
+      this.log(`Reset. Recompile with: hwai face:thread:make ${args.thread_id}`)
     }
     return data
   }

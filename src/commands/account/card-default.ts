@@ -1,7 +1,7 @@
 import {Args} from '@oclif/core'
-import {BaseCommand} from '../../../base.js'
-import {HwAPIError} from '../../../client.js'
-import {seg} from '../../../utils.js'
+import {BaseCommand} from '../../base.js'
+import {HwAPIError} from '../../client.js'
+import {seg} from '../../utils.js'
 
 export default class BillingCardDefault extends BaseCommand {
   static description = 'Make a saved card the default: the next renewal, and any top-up that names no card, charges it'
@@ -13,7 +13,7 @@ export default class BillingCardDefault extends BaseCommand {
   }
 
   static args = {
-    card_id: Args.string({description: 'Card id (pm_...), from hw billing:cards', required: true}),
+    card_id: Args.string({description: 'Card id (pm_...), from hwai account:cards', required: true}),
   }
 
   async run(): Promise<unknown> {
@@ -25,7 +25,7 @@ export default class BillingCardDefault extends BaseCommand {
       data = await client.post(`/v1/billing/payment-methods/${seg(args.card_id)}/default`, {requireJwt: true})
     } catch (err) {
       if (err instanceof HwAPIError) {
-        if (err.statusCode === 404) this.error(`HTTP 404: ${err.message}\nList your cards with: hw billing:cards`)
+        if (err.statusCode === 404) this.error(`HTTP 404: ${err.message}\nList your cards with: hwai account:cards`)
         this.error(`HTTP ${err.statusCode}: ${err.message}`)
       }
       throw err

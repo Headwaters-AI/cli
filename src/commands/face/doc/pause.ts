@@ -40,7 +40,7 @@ export default class CompileDocPause extends BaseCommand {
     // authority.
     if (flags['no-wait']) {
       if (!json) {
-        process.stderr.write(`Pausing. Poll with: hw face:doc:get ${args.doc_id} --json\n`)
+        process.stderr.write(`Pausing. Poll with: hwai face:doc:get ${args.doc_id} --json\n`)
       }
       return data
     }
@@ -61,7 +61,7 @@ export default class CompileDocPause extends BaseCommand {
   private report(status: string | null | undefined, id: string, timeout: number): string {
     switch (status) {
       case 'paused': {
-        return `Paused. Resume with: hw face:doc:make ${id}`
+        return `Paused. Resume with: hwai face:doc:make ${id}`
       }
 
       case 'compiled': {
@@ -78,7 +78,7 @@ export default class CompileDocPause extends BaseCommand {
       }
 
       default: {
-        return `Still stopping after ${timeout}s. Poll with: hw face:doc:get ${id} --json`
+        return `Still stopping after ${timeout}s. Poll with: hwai face:doc:get ${id} --json`
       }
     }
   }

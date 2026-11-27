@@ -30,7 +30,7 @@ export default class CompileDocReset extends BaseCommand {
     }
 
     if (!this.jsonEnabled()) {
-      this.log(`Reset. Recompile with: hw face:doc:make ${args.doc_id}`)
+      this.log(`Reset. Recompile with: hwai face:doc:make ${args.doc_id}`)
     }
     return data
   }

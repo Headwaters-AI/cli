@@ -42,7 +42,7 @@ export default class FaceAttributes extends BaseCommand {
       const other = rows.filter((r) => r.format && !known.has(r.format))
       for (const r of other) this.log(`  ${r.key.padEnd(width)}  ${r.holds ?? ''} (${r.format})`)
 
-      this.log('\nSet them with: hw face:edit <alias> --attr KEY=VALUE\n')
+      this.log('\nSet them with: hwai face:edit <alias> --attr KEY=VALUE\n')
     }
 
     return data

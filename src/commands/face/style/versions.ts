@@ -53,7 +53,7 @@ export default class StyleVersions extends BaseCommand {
           }
 
           this.log(`'${args.alias}' exists and has no built style yet.`)
-          this.log(`Build one with: hw face:style:make ${args.alias} --all`)
+          this.log(`Build one with: hwai face:style:make ${args.alias} --all`)
           return {self_face: args.alias, versions: []}
         }
         this.error(`No face named '${args.alias}'. It does not exist, or is not yours.`, {exit: EXIT_NO_SUCH_FACE})
@@ -66,7 +66,7 @@ export default class StyleVersions extends BaseCommand {
     if (this.jsonEnabled()) return data
 
     if (versions.length === 0) {
-      this.log(`'${args.alias}' has no built style. Build one with: hw face:style:make ${args.alias} --all`)
+      this.log(`'${args.alias}' has no built style. Build one with: hwai face:style:make ${args.alias} --all`)
       return data
     }
 
@@ -126,7 +126,7 @@ export default class StyleVersions extends BaseCommand {
             : ` from ${prior.sources_printed} source(s)`
         this.log(`  ${label(v)} would go back to v${prior.version}, built ${when}${from}.`)
       }
-      if (media.length > 0) this.log(`Use: hw face:style:revert ${alias} --medium ${media[0]} --yes`)
+      if (media.length > 0) this.log(`Use: hwai face:style:revert ${alias} --medium ${media[0]} --yes`)
     }
     return data
   }

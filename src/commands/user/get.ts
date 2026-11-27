@@ -52,11 +52,11 @@ export default class UserGet extends BaseCommand {
       // not the same as "no", so it is not reported as one.
       if (data.is_following === true) this.log('You follow this account.')
       else if (data.is_following === false) {
-        this.log(`You do not follow this account. Follow it with: hw user:follow ${data.username}`)
+        this.log(`You do not follow this account. Follow it with: hwai user:follow ${data.username}`)
       }
 
       this.log('')
-      this.log(`Their published faces: hw face:list --public --from-users ${data.username}`)
+      this.log(`Their published faces: hwai face:list --public --from-users ${data.username}`)
     }
 
     return data

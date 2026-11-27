@@ -28,7 +28,7 @@ export function statelessChatFlags() {
         'The full model, @owner~face:maestro-1/<decoder>, is accepted too. Needed unless going on with a --thread.',
     }),
     fast: Flags.boolean({description: 'Steer with maestro-1-fast: sooner, at 10 times the steering price.', default: false}),
-    decoder: Flags.string({description: 'The chat model that writes the reply, any chat model in hw models:list, written as it is listed (e.g. gpt-5.4).'}),
+    decoder: Flags.string({description: 'The chat model that writes the reply, any chat model in hwai models:list, written as it is listed (e.g. gpt-5.4).'}),
     ...rest,
   }
 }
@@ -107,18 +107,18 @@ export async function chatRefusal(err: HwAPIError, model: string, endpoint: stri
   if (err.errorCode === 'oauth_rejected') {
     const hints: string[] = []
     const linked = await chatgptLinked(client)
-    if (linked === false) hints.push('No ChatGPT account is linked. Link one with: hw auth:connect openai')
-    else hints.push('If the ChatGPT link has lapsed, link it again with: hw auth:connect openai')
+    if (linked === false) hints.push('No ChatGPT account is linked. Link one with: hwai account:connect openai')
+    else hints.push('If the ChatGPT link has lapsed, link it again with: hwai account:connect openai')
     if (endpoint === RESPONSES_ENDPOINT && freeWhenConnected && linked === false) hints.push('This model is free once it is linked.')
     hints.push(
       err.fallbackAvailable
-        ? 'Or allow paid fallback: hw account:preferences api_fallback true'
-        : 'Or add credits (hw billing:topup --amount <usd>) and allow paid fallback: hw account:preferences api_fallback true',
+        ? 'Or allow paid fallback: hwai account:preferences api_fallback true'
+        : 'Or add credits (hwai account:topup --amount <usd>) and allow paid fallback: hwai account:preferences api_fallback true',
     )
     return `OAuth failed: ${err.message}\n${hints.join('\n')}`
   }
   if (err.errorCode === 'model_not_supported') {
-    return `${err.message}\nYour ChatGPT plan does not serve this model. Name another after the /, or let it run on credits: hw account:preferences api_fallback true`
+    return `${err.message}\nYour ChatGPT plan does not serve this model. Name another after the /, or let it run on credits: hwai account:preferences api_fallback true`
   }
   if (err.errorCode === 'use_responses_for_free_oauth' && endpoint === CHAT_COMPLETIONS_ENDPOINT) {
     return `HTTP ${err.statusCode}: ${err.message}\nRun it on your ChatGPT plan with --responses.`

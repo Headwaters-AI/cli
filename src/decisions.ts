@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 /**
- * Helpers for `hw maestro:decide`, the client for POST /v1/systemone (Jev's System One format).
+ * Helpers for `hwai maestro:decide`, the client for POST /v1/systemone (Jev's System One format).
  *
  * Kept apart from the command so the parts that decide what a person is told
  * can be checked offline (scripts/check.mjs) without a face to ask.
@@ -27,7 +27,7 @@ export async function decisionModels(client: HwClient): Promise<string[]> {
   return [...DECISION_MODELS]
 }
 
-/** Which request shape `hw maestro:decide` sends: Jev's System One, or OpenAI's Decisions format. */
+/** Which request shape `hwai maestro:decide` sends: Jev's System One, or OpenAI's Decisions format. */
 export const DECISION_FORMATS = ['systemone', 'openai'] as const
 
 /**
@@ -241,7 +241,7 @@ export function warmUpWait(status: number, retryAfter: number | undefined, waite
  * The refusal inside a held response, or undefined when the body is an answer.
  *
  * A decision that runs past about 40 seconds is held open: the server sends
- * 200 at once with `X-Faces-Held: 1`, keeps the connection alive with spaces,
+ * 200 at once with `X-Headwaters-Held: 1`, keeps the connection alive with spaces,
  * and writes the JSON when it is done. A JSON parser skips the spaces. By the
  * time the call fails the 200 has gone, so the failure arrives as a body,
  * `{detail, error: {..., status}}`, with no `answers`, and a reader that went

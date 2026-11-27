@@ -44,9 +44,9 @@ export default class FidelityPick extends BaseCommand {
       let turn = flags.turn
       if (turn === undefined) {
         const run = await getRun(client, args.run_id)
-        if (!run.next) this.error(`This run is finished. Read it with: hw face:fidelity:get ${args.run_id}`)
+        if (!run.next) this.error(`This run is finished. Read it with: hwai face:fidelity:get ${args.run_id}`)
         if (run.next.awaiting !== 'choice') {
-          this.error(`Turn ${run.next.turn} has no answers to pick from yet. Send its message: hw face:fidelity:turn ${args.run_id} -m "..."`)
+          this.error(`Turn ${run.next.turn} has no answers to pick from yet. Send its message: hwai face:fidelity:turn ${args.run_id} -m "..."`)
         }
         turn = run.next.turn
       }
@@ -62,10 +62,10 @@ export default class FidelityPick extends BaseCommand {
     this.log(`turn ${data.turn}: scored ${score10(data.score)}, ${score10(data.score_so_far)} so far`)
     if (data.done) {
       this.log(`\nFinished. Fidelity: ${score10(data.fidelity)} out of ${FIDELITY_TURNS}, saved on the face.`)
-      this.log(`See which answers were the face's: hw face:fidelity:get ${args.run_id}`)
-      this.log(`Keep the conversation as a thread, to compile: hw face:fidelity:save-thread ${args.run_id}`)
+      this.log(`See which answers were the face's: hwai face:fidelity:get ${args.run_id}`)
+      this.log(`Keep the conversation as a thread, to compile: hwai face:fidelity:save-thread ${args.run_id}`)
     } else {
-      this.log(`Next turn: hw face:fidelity:turn ${args.run_id} -m "..."`)
+      this.log(`Next turn: hwai face:fidelity:turn ${args.run_id} -m "..."`)
     }
     return data
   }

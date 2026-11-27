@@ -56,7 +56,7 @@ export default class MaestroDecide extends BaseCommand {
     '--decoder names the decision model that answers (default jev-latest). The face steers the decision model\'s ' +
     'answer. In a state, use state:decide. An answer takes about 10 to 20 seconds; one that runs long is held open ' +
     'by the server and can take a minute or more. The steering is billed per input token plus a small fee per ' +
-    'call (see hw models:list --kind upstream), and the decision model at its listed price. A face needs ' +
+    'call (see hwai models:list --kind upstream), and the decision model at its listed price. A face needs ' +
     'something compiled.'
 
   static examples = [
@@ -81,7 +81,7 @@ export default class MaestroDecide extends BaseCommand {
     fast: Flags.boolean({description: 'Run on maestro-1-fast: sooner, and 10 times the price.', default: false}),
     decoder: Flags.string({
       description:
-        'The decision model that answers: jev-latest (the default), clef, clef-flash or gpt-6-luna today (hw models:list ' +
+        'The decision model that answers: jev-latest (the default), clef, clef-flash or gpt-6-luna today (hwai models:list ' +
         '--kind decision). gpt-6-luna answers in OpenAI\'s format only, so it uses --format openai.',
     }),
     state: Flags.string({

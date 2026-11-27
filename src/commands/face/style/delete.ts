@@ -21,7 +21,7 @@ export default class StyleDelete extends BaseCommand {
   static flags = {
     ...BaseCommand.baseFlags,
     medium: Flags.string({
-      description: 'Delete only this medium\'s style build, leaving the rest. See hw face:style:versions <alias>.',
+      description: 'Delete only this medium\'s style build, leaving the rest. See hwai face:style:versions <alias>.',
       exclusive: ['all'],
     }),
     all: Flags.boolean({
@@ -72,13 +72,13 @@ export default class StyleDelete extends BaseCommand {
         if (err.errorCode === 'style_delete_ambiguous' || err.statusCode === 409) {
           this.error(
             `${err.message}\n` +
-              `Name one:  hw face:style:delete ${args.alias} --medium <medium>\n` +
-              `Or all:    hw face:style:delete ${args.alias} --all\n` +
-              `See what it has: hw face:style:versions ${args.alias}`,
+              `Name one:  hwai face:style:delete ${args.alias} --medium <medium>\n` +
+              `Or all:    hwai face:style:delete ${args.alias} --all\n` +
+              `See what it has: hwai face:style:versions ${args.alias}`,
           )
         }
         if (err.errorCode === 'style_medium_unavailable') {
-          this.error(`${err.message}\nSee what it has: hw face:style:versions ${args.alias}`)
+          this.error(`${err.message}\nSee what it has: hwai face:style:versions ${args.alias}`)
         }
         if (err.statusCode === 404) this.error(`No face named '${args.alias}'. It does not exist, or is not yours.`)
         this.error(`HTTP ${err.statusCode}: ${err.message}`)
@@ -96,7 +96,7 @@ export default class StyleDelete extends BaseCommand {
         ? `Deleted the ${medium} style build of '${args.alias}'. Its other styles, its sources and what it learned from them are untouched.`
         : `Deleted the style builds of '${args.alias}'. Its sources and what it learned from them are untouched.`,
     )
-    this.log(`Build it again with: hw face:style:make ${args.alias} --all`)
+    this.log(`Build it again with: hwai face:style:make ${args.alias} --all`)
     return data
   }
 

@@ -22,7 +22,7 @@ export default class CatalogList extends BaseCommand {
     if (this.jsonEnabled()) return entries
 
     if (entries.length === 0) {
-      this.log('(no faces in the local catalog. If you have faces on your account, sync them with: hw catalog:doctor --fix)')
+      this.log('(no faces in the local catalog. If you have faces on your account, sync them with: hwai catalog:doctor --fix)')
       return entries
     }
 

@@ -66,7 +66,7 @@ export default class BenchmarkStart extends BaseCommand {
     if (!flags.wait) {
       if (this.jsonEnabled()) return data
       this.log(`Started benchmark ${id}.`)
-      this.log(`Follow it with: hw face:benchmark:get ${id} --wait`)
+      this.log(`Follow it with: hwai face:benchmark:get ${id} --wait`)
       return data
     }
 

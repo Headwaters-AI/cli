@@ -109,8 +109,8 @@ export const CLEAR_P = 0.6
 export const CLEAR_MARGIN = 0.2
 /** The duplicate matcher's bar (choices.SIMILAR_AT), for "Reads:" names and a repeated test. */
 export const SIMILAR_AT = 0.85
-export const DECISION_MODEL = process.env.HW_REFINE_DECISION_MODEL?.trim() || 'jev-latest'
-export const CONDITION_MODEL = process.env.HW_REFINE_CONDITION_MODEL?.trim() || 'clef'
+export const DECISION_MODEL = process.env.HEADWATERS_REFINE_DECISION_MODEL?.trim() || 'jev-latest'
+export const CONDITION_MODEL = process.env.HEADWATERS_REFINE_CONDITION_MODEL?.trim() || 'clef'
 const MAX_PREDICATES = 10
 
 export type Kind = 'and' | 'or' | 'test' | 'human'

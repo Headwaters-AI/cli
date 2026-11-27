@@ -1,6 +1,6 @@
-import {BaseCommand} from '../../../base.js'
-import {HwAPIError} from '../../../client.js'
-import {allowanceLines, planName} from '../../../billing.js'
+import {BaseCommand} from '../../base.js'
+import {HwAPIError} from '../../client.js'
+import {allowanceLines, planName} from '../../billing.js'
 
 export default class BillingSubscription extends BaseCommand {
   static description =
@@ -31,7 +31,7 @@ export default class BillingSubscription extends BaseCommand {
       if (sub.cancel_at_period_end === true && sub.plan !== 'free') {
         const ends = String(sub.current_period_end ?? 'the end of the period').replace('T', ' ').replace(/\.\d+$/, '')
         this.log(`Set to cancel: the ${planName(String(sub.plan))} plan ends ${ends}, then the account moves to Free.`)
-        this.log('Keep it with: hw billing:subscription:activate')
+        this.log('Keep it with: hwai account:activate')
         this.log('')
       }
 
@@ -44,7 +44,7 @@ export default class BillingSubscription extends BaseCommand {
         for (const line of lines) this.log(line)
       } else if (sub.plan === 'free') {
         this.log('')
-        this.log('The Free plan has no allowances: it pays as it goes from credits (hw billing:balance).')
+        this.log('The Free plan has no allowances: it pays as it goes from credits (hwai account:balance).')
       }
     }
 

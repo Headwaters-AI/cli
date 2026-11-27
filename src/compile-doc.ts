@@ -40,7 +40,7 @@ export default class CompileDoc extends BaseCommand {
     'Repeat --file to submit several documents in a single command; each file becomes its own ' +
     'document rather than being concatenated. A document is the face\'s own writing, and every word in ' +
     'it is read as theirs. An interview, transcript or dialogue is a thread: upload it with ' +
-    'hw face:compile ALIAS --file FILE --kind thread --face-speaker NAME.'
+    'hwai face:compile ALIAS --file FILE --kind thread --face-speaker NAME.'
 
   static examples = [
     '<%= config.bin %> <%= command.id %> alice --file notes.txt',
@@ -174,7 +174,7 @@ export default class CompileDoc extends BaseCommand {
       if (saved > 0) {
         this.error(
           `${saved} of ${results.length} document(s) were saved but none could be compiled; the reasons are above. ` +
-            `They are listed in: hw face:sources ${args.face_id}`,
+            `They are listed in: hwai face:sources ${args.face_id}`,
         )
       }
       this.error(results.length === 1 ? 'Document was not accepted.' : 'No documents were accepted.')
@@ -187,7 +187,7 @@ export default class CompileDoc extends BaseCommand {
         for (const s of started) {
           process.stderr.write(`Compilation started in background${s.status === 'queued' ? ' (queued)' : ''}: ${s.docId}\n`)
         }
-        process.stderr.write(`Poll with: hw face:doc:get <id> --json\n`)
+        process.stderr.write(`Poll with: hwai face:doc:get <id> --json\n`)
       }
       return this.shape(results)
     }

@@ -44,7 +44,7 @@ export default class CompileThreadGet extends BaseCommand {
       }
       const lines = freshnessLines(
         data as Record<string, never>,
-        `hw face:thread:make ${args.thread_id}`,
+        `hwai face:thread:make ${args.thread_id}`,
         args.thread_id,
       )
 

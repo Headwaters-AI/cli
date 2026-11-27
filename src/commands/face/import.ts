@@ -88,7 +88,7 @@ export default class CompileImport extends BaseCommand {
       const id = (data.thread_id ?? data.document_id) as string
       if (!json) {
         process.stderr.write(`Import started in background (downloading + transcribing).\n`)
-        process.stderr.write(`Poll with: hw face:${flags.type === 'thread' ? 'thread' : 'doc'}:get ${id} --json\n`)
+        process.stderr.write(`Poll with: hwai face:${flags.type === 'thread' ? 'thread' : 'doc'}:get ${id} --json\n`)
       }
       return data
     }
@@ -130,16 +130,16 @@ export default class CompileImport extends BaseCommand {
         this.log(`\nImported as thread: ${data.thread_id}`)
         this.log(`label: ${data.label ?? 'youtube-import'}`)
         this.log(`\nReview the transcript:`)
-        this.log(`  hw face:thread:get ${data.thread_id}`)
+        this.log(`  hwai face:thread:get ${data.thread_id}`)
         this.log(`\nWhen ready to compile:`)
-        this.log(`  hw face:thread:make ${data.thread_id}`)
+        this.log(`  hwai face:thread:make ${data.thread_id}`)
       } else if (data.document_id) {
         this.log(`\nImported as document: ${data.document_id}`)
         this.log(`label: ${data.label ?? 'youtube-import'}`)
         this.log(`\nReview the document:`)
-        this.log(`  hw face:doc:get ${data.document_id}`)
+        this.log(`  hwai face:doc:get ${data.document_id}`)
         this.log(`\nWhen ready to compile:`)
-        this.log(`  hw face:doc:make ${data.document_id}`)
+        this.log(`  hwai face:doc:make ${data.document_id}`)
       }
     }
 

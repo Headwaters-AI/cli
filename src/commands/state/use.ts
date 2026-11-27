@@ -5,7 +5,7 @@ import {ReplyCommand, writeStateFile} from '../../foreman.js'
 export default class StateUse extends ReplyCommand {
   static description =
     'Use a state in this directory: writes .headwaters/state (or .headwaters/state.local with --local, which overrides it), ' +
-    'so every hw call run here or below finds it. Prints its synopsis. Free.'
+    'so every hwai call run here or below finds it. Prints its synopsis. Free.'
 
   static examples = ['<%= config.bin %> <%= command.id %> fs_STATE_ID', '<%= config.bin %> <%= command.id %> fs_STATE_ID --local']
 

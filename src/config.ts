@@ -4,8 +4,7 @@ import path from 'node:path'
 
 export const CONFIG_PATH = path.join(os.homedir(), '.headwaters', 'config.json')
 
-// TODO(#2080): switch the default to https://api.headwaters.ai once it serves (#2080 item 2.1).
-export const DEFAULT_BASE_URL = 'https://api.faces.sh'
+export const DEFAULT_BASE_URL = 'https://api.headwaters.ai'
 
 export interface HwConfig {
   base_url?: string
@@ -120,10 +119,10 @@ export interface ResolvedCredentials {
  */
 export function resolveCredentials(flags: {token?: string; 'api-key'?: string}, baseUrl: string): ResolvedCredentials {
   const cfg = loadConfig()
-  const explicitToken = flags.token !== undefined ? flags.token || undefined : process.env.HW_TOKEN || undefined
-  const explicitKey = flags['api-key'] !== undefined ? flags['api-key'] || undefined : process.env.HW_API_KEY || undefined
-  const tokenGiven = flags.token !== undefined || Boolean(process.env.HW_TOKEN)
-  const keyGiven = flags['api-key'] !== undefined || Boolean(process.env.HW_API_KEY)
+  const explicitToken = flags.token !== undefined ? flags.token || undefined : process.env.HEADWATERS_TOKEN || undefined
+  const explicitKey = flags['api-key'] !== undefined ? flags['api-key'] || undefined : process.env.HEADWATERS_API_KEY || undefined
+  const tokenGiven = flags.token !== undefined || Boolean(process.env.HEADWATERS_TOKEN)
+  const keyGiven = flags['api-key'] !== undefined || Boolean(process.env.HEADWATERS_API_KEY)
 
   let token = tokenGiven ? explicitToken : undefined
   let apiKey = keyGiven ? explicitKey : undefined
@@ -137,7 +136,7 @@ export function resolveCredentials(flags: {token?: string; 'api-key'?: string}, 
       apiKey ??= savedKey
     } else {
       withheld = `The saved credentials belong to ${owner}, so they were not sent to ${originOf(baseUrl)}. ` +
-        'Log in there, or pass --api-key or HW_API_KEY for it.'
+        'Log in there, or pass --api-key or HEADWATERS_API_KEY for it.'
     }
   }
 
@@ -157,7 +156,7 @@ export function resolveCredentials(flags: {token?: string; 'api-key'?: string}, 
 
 export function resolveBaseUrl(override?: string): string {
   if (override) return override
-  if (process.env.HW_BASE_URL) return process.env.HW_BASE_URL
+  if (process.env.HEADWATERS_BASE_URL) return process.env.HEADWATERS_BASE_URL
   const cfg = loadConfig()
   if (cfg.base_url) return cfg.base_url
   return DEFAULT_BASE_URL
@@ -166,7 +165,7 @@ export function resolveBaseUrl(override?: string): string {
 export function resolveToken(override?: string): string | undefined {
   // Empty string override means "no token": don't fall back to config/env
   if (override !== undefined) return override || undefined
-  const env = process.env.HW_TOKEN
+  const env = process.env.HEADWATERS_TOKEN
   if (env) return env
   return loadConfig().token || undefined
 }
@@ -174,7 +173,7 @@ export function resolveToken(override?: string): string | undefined {
 export function resolveApiKey(override?: string): string | undefined {
   // Empty string override means "no API key": don't fall back to config/env
   if (override !== undefined) return override || undefined
-  const env = process.env.HW_API_KEY
+  const env = process.env.HEADWATERS_API_KEY
   if (env) return env
   return loadConfig().api_key || undefined
 }

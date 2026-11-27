@@ -90,7 +90,7 @@ export default class StyleStatus extends BaseCommand {
     if (json) return {...data, jobs: jobs.map((j) => publicJob(j))}
 
     if (jobs.length === 0) {
-      this.log(`'${face}' has no style builds yet. Build one with: hw face:style:make ${face} --all`)
+      this.log(`'${face}' has no style builds yet. Build one with: hwai face:style:make ${face} --all`)
       return data
     }
 
@@ -122,7 +122,7 @@ export default class StyleStatus extends BaseCommand {
     this.log(`${rows.length} build(s) shown, newest first. Raise the cap with --limit.`)
     if (rows.some((r) => r.by === 'auto')) {
       this.log('BY auto means an automatic build: it ran once the face had enough of its own writing. Read one')
-      this.log('for why, or turn them off: hw account:preferences auto_style off')
+      this.log('for why, or turn them off: hwai account:preferences auto_style off')
     }
     return data
   }

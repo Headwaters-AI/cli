@@ -82,10 +82,10 @@ export function runLines(run: BenchmarkRun): string[] {
 /** What to do about a benchmark refusal, or undefined when the server's message is enough. */
 export function benchmarkHint(err: HwAPIError, face?: string): string | undefined {
   const alias = face ?? '<alias>'
-  if (err.errorCode === 'benchmark_no_compiled_corpus') return `Add a source with: hw face:compile ${alias} --file <file>`
-  if (err.errorCode === 'benchmark_no_style') return `Build its style with: hw face:style:make ${alias} --all`
-  if (err.errorCode === 'benchmark_insufficient_credit') return 'Lower --rounds or --max-spend, or add credit: hw billing:topup --amount <usd>'
-  if (err.statusCode === 400 && /model/i.test(err.message)) return 'List the models with: hw models:list'
+  if (err.errorCode === 'benchmark_no_compiled_corpus') return `Add a source with: hwai face:compile ${alias} --file <file>`
+  if (err.errorCode === 'benchmark_no_style') return `Build its style with: hwai face:style:make ${alias} --all`
+  if (err.errorCode === 'benchmark_insufficient_credit') return 'Lower --rounds or --max-spend, or add credit: hwai account:topup --amount <usd>'
+  if (err.statusCode === 400 && /model/i.test(err.message)) return 'List the models with: hwai models:list'
   return undefined
 }
 

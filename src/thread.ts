@@ -1,6 +1,6 @@
 /**
  * Named chat threads, kept on this machine under ~/.headwaters/threads/<name>.json:
- * `hw maestro:chat --thread <name>`. Each turn sends the whole thread.
+ * `hwai maestro:chat --thread <name>`. Each turn sends the whole thread.
  */
 import fs from 'node:fs'
 import os from 'node:os'
@@ -30,7 +30,7 @@ export function threadPath(name: string): string {
   // The name names a file, so it must not be able to name any other one:
   // `--thread ../config --delete` would remove the saved credentials.
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(name)) {
-    throw new Error(`"${name}" cannot name a thread: use letters, digits, - and _ (at most 64). List them with: hw maestro:chat --threads`)
+    throw new Error(`"${name}" cannot name a thread: use letters, digits, - and _ (at most 64). List them with: hwai maestro:chat --threads`)
   }
   return path.join(THREADS_DIR, `${name}.json`)
 }

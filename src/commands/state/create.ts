@@ -13,7 +13,7 @@ import {seg} from '../../utils.js'
 export default class StateCreate extends BaseCommand {
   static description =
     'Create a new, empty state: a proof in progress, built with state:add and read with state:get. ' +
-    '--use makes this directory use it (.headwaters/state, read by every hw call here or below). Free. ' +
+    '--use makes this directory use it (.headwaters/state, read by every hwai call here or below). Free. ' +
     'A state expires 30 days after it was last used.'
 
   static examples = [
@@ -24,7 +24,7 @@ export default class StateCreate extends BaseCommand {
 
   static flags = {
     ...BaseCommand.baseFlags,
-    use: Flags.boolean({description: 'Use it in this directory: write .headwaters/state, which every hw call here or below reads.', default: false}),
+    use: Flags.boolean({description: 'Use it in this directory: write .headwaters/state, which every hwai call here or below reads.', default: false}),
     local: Flags.boolean({description: 'With --use: write .headwaters/state.local instead (overrides .headwaters/state, for you alone).', default: false, dependsOn: ['use']}),
   }
 
@@ -44,17 +44,17 @@ export default class StateCreate extends BaseCommand {
     if (!data.id) this.error('The server returned no state id.')
     if (!flags.use) {
       if (this.jsonEnabled()) return data
-      this.log(`Created an empty state, ${data.id}. hw state:use ${data.id} makes this directory use it.`)
+      this.log(`Created an empty state, ${data.id}. hwai state:use ${data.id} makes this directory use it.`)
       return data
     }
     const file = writeStateFile(data.id, flags.local)
     if (this.jsonEnabled()) return {...data, state_file: file}
-    this.log(`Created an empty state, ${data.id}. Every hw call in this directory now uses it (${file}).`)
+    this.log(`Created an empty state, ${data.id}. Every hwai call in this directory now uses it (${file}).`)
     try {
       const got = await client.stateReply('GET', `${CONVERSATIONS_PATH}/${seg(data.id)}/proof`)
       if (typeof got.data.text === 'string') this.log('\n' + got.data.text)
     } catch {
-      // the state is created and used; its proof is one hw state:get away
+      // the state is created and used; its proof is one hwai state:get away
     }
     return {...data, state_file: file}
   }

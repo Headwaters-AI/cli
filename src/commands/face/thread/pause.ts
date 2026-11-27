@@ -40,7 +40,7 @@ export default class CompileThreadPause extends BaseCommand {
     // authority.
     if (flags['no-wait']) {
       if (!json) {
-        process.stderr.write(`Pausing. Poll with: hw face:thread:get ${args.thread_id} --json\n`)
+        process.stderr.write(`Pausing. Poll with: hwai face:thread:get ${args.thread_id} --json\n`)
       }
       return data
     }
@@ -62,7 +62,7 @@ export default class CompileThreadPause extends BaseCommand {
   private report(status: string | null | undefined, id: string, timeout: number): string {
     switch (status) {
       case 'paused': {
-        return `Paused. Resume with: hw face:thread:make ${id}`
+        return `Paused. Resume with: hwai face:thread:make ${id}`
       }
 
       case 'compiled': {
@@ -79,7 +79,7 @@ export default class CompileThreadPause extends BaseCommand {
       }
 
       default: {
-        return `Still stopping after ${timeout}s. Poll with: hw face:thread:get ${id} --json`
+        return `Still stopping after ${timeout}s. Poll with: hwai face:thread:get ${id} --json`
       }
     }
   }

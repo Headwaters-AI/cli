@@ -24,7 +24,7 @@ export default class FaceCreate extends BaseCommand {
       description:
         'Set attribute KEY=VALUE (repeatable). age, gender and location take a bare value ("45", "Lisbon, ' +
         'Portugal"); identity, education, occupation, religion, family, relationships, health, languages and ' +
-        'background take a short sentence. Any other key is refused, and then nothing is saved. See hw face:attributes.',
+        'background take a short sentence. Any other key is refused, and then nothing is saved. See hwai face:attributes.',
       multiple: true,
     }),
     tool: Flags.string({description: 'Tool name to enable (repeatable). The server stores any name without checking it, so spell it as the tool expects.', multiple: true}),
@@ -62,7 +62,7 @@ export default class FaceCreate extends BaseCommand {
     } else {
       const parsedAttrs: Record<string, string> = {}
       for (const a of flags.attr ?? []) {
-        if (!a.includes('=') || !a.slice(0, a.indexOf('=')).trim()) this.error(`Attributes must be KEY=VALUE, got: ${a}. See the keys with: hw face:attributes`)
+        if (!a.includes('=') || !a.slice(0, a.indexOf('=')).trim()) this.error(`Attributes must be KEY=VALUE, got: ${a}. See the keys with: hwai face:attributes`)
         const idx = a.indexOf('=')
         parsedAttrs[a.slice(0, idx).trim()] = a.slice(idx + 1).trim()
       }

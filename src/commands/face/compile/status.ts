@@ -49,7 +49,7 @@ function groupLabel(g: {progress?: number | null; measurable?: boolean | null}, 
 
 /** What resumes a paused source: make again, on its kind of source. */
 function resumeCommand(s: PausedSource): string {
-  return `hw face:${s.kind === 'document' ? 'doc' : 'thread'}:make ${s.id}`
+  return `hwai face:${s.kind === 'document' ? 'doc' : 'thread'}:make ${s.id}`
 }
 
 function sleep(ms: number): Promise<void> {

@@ -84,13 +84,13 @@ export default class FaceGet extends BaseCommand {
             this.error(
               `Could not find '${args.face_id}' in the face listing.\n` +
                 'A published face can be reachable before it appears there, so this may not mean it does ' +
-                `not exist. If you know the handle, try it directly: hw maestro:choices --face ${args.face_id} --state "..."`,
+                `not exist. If you know the handle, try it directly: hwai maestro:choices --face ${args.face_id} --state "..."`,
             )
           }
           if (isMeAlias(args.face_id)) this.error(ME_MISSING)
           this.error(
             `No face '${args.face_id}'. If it belongs to another account, name it as owner:alias, ` +
-              'the same address chat uses. Find it with: hw face:list --public',
+              'the same address chat uses. Find it with: hwai face:list --public',
           )
         }
         this.error(`HTTP ${err.statusCode}: ${err.message}`)
@@ -101,7 +101,7 @@ export default class FaceGet extends BaseCommand {
     const data = resolved.face
     // Some other server can answer 200 with JSON of its own.
     if (typeof (data as Record<string, unknown>).alias !== 'string') {
-      this.error(`${resolveBaseUrl(flags['base-url'])} did not answer like the Headwaters API: the face has no alias. Check the base URL in: hw config:show`)
+      this.error(`${resolveBaseUrl(flags['base-url'])} did not answer like the Headwaters API: the face has no alias. Check the base URL in: hwai config:show`)
     }
     const face = data as Record<string, unknown>
     renameFaceFields(face)

@@ -47,8 +47,8 @@ export default class FaceAvatarMake extends BaseCommand {
     if (!flags['allow-paid']) {
       this.error(
         'Generating an avatar bills your account. Re-run with --allow-paid if you meant to pay.\n' +
-          `To see the versions this face already has, which is free: hw face:avatar:list ${args.face_id}\n` +
-          `To download one: hw face:avatar:get ${args.face_id}`,
+          `To see the versions this face already has, which is free: hwai face:avatar:list ${args.face_id}\n` +
+          `To download one: hwai face:avatar:get ${args.face_id}`,
       )
     }
 
@@ -65,7 +65,7 @@ export default class FaceAvatarMake extends BaseCommand {
       if (err instanceof HwAPIError && err.statusCode === 422 && /compiled/i.test(err.message)) {
         this.error(
           `HTTP 422: ${err.message}\nNothing was charged. Give it a first source, then try again: ` +
-            `hw face:compile ${args.face_id} --file <file>`,
+            `hwai face:compile ${args.face_id} --file <file>`,
         )
       }
       if (err instanceof HwAPIError) this.error(`HTTP ${err.statusCode}: ${err.message}`)
@@ -89,10 +89,10 @@ export default class FaceAvatarMake extends BaseCommand {
       this.log(
         typeof data.amount_charged_usd === 'number'
           ? `  charged $${data.amount_charged_usd.toFixed(4)}`
-          : '  charged: the response did not say how much; check hw billing:balance',
+          : '  charged: the response did not say how much; check hwai account:balance',
       )
       this.log('')
-      this.log(`Download it with: hw face:avatar:get ${args.face_id}`)
+      this.log(`Download it with: hwai face:avatar:get ${args.face_id}`)
     }
 
     return data

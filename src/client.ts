@@ -23,15 +23,15 @@ export function outOfDateHint(latest?: string | null): string {
   // On the newest release an update cannot help, and saying it can sends an
   // agent round a reinstall loop: what is left is a bug in this CLI.
   if (latest && CLI_VERSION && compareVersions(CLI_VERSION, latest) >= 0) {
-    return `hw CLI ${CLI_VERSION} is up to date (the latest on npm is ${latest}), so this looks like a hw CLI bug rather than an old install. ` +
+    return `hwai CLI ${CLI_VERSION} is up to date (the latest on npm is ${latest}), so this looks like a hwai CLI bug rather than an old install. ` +
       'Please report it, with the command you ran: https://github.com/Headwaters-AI/cli/issues'
   }
 
   if (latest && CLI_VERSION) {
-    return `Your hw CLI (${CLI_VERSION}) is out of date; the latest is ${latest}. Update with \`npm install -g @headwaters-ai/cli@latest\` and try again.`
+    return `Your hwai CLI (${CLI_VERSION}) is out of date; the latest is ${latest}. Update with \`npm install -g @headwaters-ai/cli@latest\` and try again.`
   }
 
-  return `Your hw CLI${version} may be out of date. Update with \`npm install -g @headwaters-ai/cli@latest\` and try again.`
+  return `Your hwai CLI${version} may be out of date. Update with \`npm install -g @headwaters-ai/cli@latest\` and try again.`
 }
 
 /** -1, 0 or 1 for dotted numeric versions; anything after a `-` is ignored. */
@@ -46,8 +46,7 @@ export function compareVersions(a: string, b: string): number {
   return 0
 }
 
-// TODO(#2080): follows DEFAULT_BASE_URL to https://api.headwaters.ai (#2080 item 2.1).
-const DEFAULT_API = 'https://api.faces.sh'
+const DEFAULT_API = 'https://api.headwaters.ai'
 
 const LATEST_CACHE = path.join(os.homedir(), '.headwaters', 'latest-version.json')
 const LATEST_TTL_MS = 6 * 3600_000
@@ -158,7 +157,7 @@ export class HwAPIError extends Error {
  */
 export function refusalGuidance(status: number, errorCode: string | undefined, message: string): string | undefined {
   if (status === 429 && /allowance/i.test(message)) {
-    return 'To continue on credits until it resets: hw account:preferences api_fallback true'
+    return 'To continue on credits until it resets: hwai account:preferences api_fallback true'
   }
   // The per-minute limit, once the one retry has been refused too. Its
   // message names the plan's limit and the wait.
@@ -166,20 +165,20 @@ export function refusalGuidance(status: number, errorCode: string | undefined, m
     return `Wait that long before asking again: a request sent sooner is refused too. Limits per plan: ${DEFAULT_API}/v1/rates`
   }
   // A top-up refused for want of a card would otherwise be told to top up.
-  if (status === 402 && /card/i.test(message)) return 'Add a card with: hw billing:card-setup'
-  if (status === 401) return 'Check what you are signed in with: hw auth:whoami. To sign in again: hw auth:login'
+  if (status === 402 && /card/i.test(message)) return 'Add a card with: hwai account:card-add'
+  if (status === 401) return 'Check what you are signed in with: hwai account:whoami. To sign in again: hwai account:login'
   // A rush the plan's allowance covers still pays its premium from credit.
   if (status === 402 && errorCode === 'insufficient_credit_for_rush') {
-    return 'Add credit with: hw billing:topup --amount <usd>, or run make again without --rush to start at the scheduled time.'
+    return 'Add credit with: hwai account:topup --amount <usd>, or run make again without --rush to start at the scheduled time.'
   }
-  if (status === 402) return 'Add credit with: hw billing:topup --amount <usd>'
+  if (status === 402) return 'Add credit with: hwai account:topup --amount <usd>'
   // The ChatGPT route cannot serve this request: on Free there is none, and on
   // Connect or Pro the model or the link may not allow it. The server says
   // which. Nothing was charged.
   if (status === 422 && errorCode === 'oauth_only_unavailable') {
     return (
       'To run it on credits instead, drop --oauth-only. On Free, OAuth-only needs Connect or Pro: ' +
-      'hw billing:subscription:activate'
+      'hwai account:activate'
     )
   }
   // A formula whose result has nothing in it: the server's message says which
@@ -190,7 +189,7 @@ export function refusalGuidance(status: number, errorCode: string | undefined, m
   if ((status === 502 || status === 503) && errorCode === 'oauth_incomplete') {
     return (
       'ChatGPT stopped its reply partway, twice in a row. Nothing was charged; try again. To let a ' +
-      'reply like this finish on the paid route instead: hw account:preferences api_fallback true'
+      'reply like this finish on the paid route instead: hwai account:preferences api_fallback true'
     )
   }
   return undefined
@@ -285,7 +284,7 @@ export class HwClient {
   authHeader(requireJwt = false): Record<string, string> {
     if (requireJwt) {
       if (!this.token) {
-        throw new Error(this.withheld ?? 'JWT login required. Run: hw auth:login')
+        throw new Error(this.withheld ?? 'JWT login required. Run: hwai account:login')
       }
 
       return {Authorization: `Bearer ${this.token}`}
@@ -295,7 +294,7 @@ export class HwClient {
     if (this.apiKey) return {Authorization: `Bearer ${this.apiKey}`}
     if (this.token) return {Authorization: `Bearer ${this.token}`}
     // Thrown rather than exiting here, so --json still answers in JSON.
-    throw new Error(this.withheld ?? 'Authentication required. Run: hw auth:login or set HW_API_KEY')
+    throw new Error(this.withheld ?? 'Authentication required. Run: hwai account:login or set HEADWATERS_API_KEY')
   }
 
   private wrapNetworkError(err: unknown, path: string): never {
@@ -305,7 +304,7 @@ export class HwClient {
     const why = cause?.code ?? cause?.message ?? (err instanceof Error ? err.message : String(err))
     throw new HwAPIError(
       0,
-      `Could not reach ${this.baseUrl} (${why}) for ${path}. Check your network connection, and the base URL in: hw config:show`,
+      `Could not reach ${this.baseUrl} (${why}) for ${path}. Check your network connection, and the base URL in: hwai config:show`,
     )
   }
 
@@ -336,7 +335,7 @@ export class HwClient {
     // key passed for this run was a choice, and gets no fallback.
     const sentKey = this.apiKey && (init.headers as Record<string, string> | undefined)?.Authorization === `Bearer ${this.apiKey}`
     if (resp.status === 401 && sentKey && this.keySaved && this.token) {
-      process.stderr.write('warn: the saved API key was refused (revoked or expired), so the saved login was used instead. Remove the key with: hw config:set api_key ""\n')
+      process.stderr.write('warn: the saved API key was refused (revoked or expired), so the saved login was used instead. Remove the key with: hwai config:set api_key ""\n')
       this.apiKey = undefined
       init = {...init, headers: {...(init.headers as Record<string, string>), Authorization: `Bearer ${this.token}`}}
       resp = await once()
@@ -409,7 +408,7 @@ export class HwClient {
       const error = new HwAPIError(
         resp.status,
         `${origin} did not answer like the Headwaters API (HTTP ${resp.status}${type ? `, ${type.split(';')[0]}` : ''}). ` +
-          `Check the base URL in: hw config:show (the Headwaters API is ${DEFAULT_API})`,
+          `Check the base URL in: hwai config:show (the Headwaters API is ${DEFAULT_API})`,
       )
       this.lastError = error
       return error
@@ -425,7 +424,7 @@ export class HwClient {
       const base = new URL(this.baseUrl)
       const basePath = base.pathname.replace(/\/$/, '')
       msg = resp.status === 404 && basePath
-        ? `${msg}\nThe base URL ends in ${basePath}, but routes already include it. Use: hw config:set base_url ${base.origin}`
+        ? `${msg}\nThe base URL ends in ${basePath}, but routes already include it. Use: hwai config:set base_url ${base.origin}`
         : `${msg}\n${outOfDateHint(await latestCliVersion())}`
     }
     const error = new HwAPIError(resp.status, msg, {
@@ -510,7 +509,7 @@ export class HwClient {
       // A list is an array or {data: [...]}. Anything else is some other
       // server answering 200, which read as an empty list: "(no faces)".
       if (!Array.isArray(env.data)) {
-        throw new HwAPIError(502, `${new URL(this.baseUrl).origin} did not answer like the Headwaters API: ${path} returned no list. Check the base URL in: hw config:show`)
+        throw new HwAPIError(502, `${new URL(this.baseUrl).origin} did not answer like the Headwaters API: ${path} returned no list. Check the base URL in: hwai config:show`)
       }
 
       if (pages === 1) envelope = env as Record<string, unknown>
@@ -542,8 +541,8 @@ export class HwClient {
    * A foreman route on a state: state:*. The server answers every one,
    * success or refusal, as {object: "state.reply", text, ...}, and `text` is what is printed,
    * so a refusal in that shape comes back rather than being thrown. Anything else that is not
-   * ok (an auth failure, a missing route) is thrown as usual. Sends HW_SESSION as the
-   * X-Faces-Session header, which the server records as the writer's session.
+   * ok (an auth failure, a missing route) is thrown as usual. Sends HEADWATERS_SESSION as the
+   * X-Headwaters-Session header, which the server records as the writer's session.
    */
   async stateReply(
     method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
@@ -555,8 +554,8 @@ export class HwClient {
     const headers: Record<string, string> = {...this.authHeader()}
     const withBody = method === 'POST' || method === 'PATCH'
     if (withBody) headers['Content-Type'] = 'application/json'
-    const session = process.env.HW_SESSION?.trim()
-    if (session) headers['X-Faces-Session'] = session
+    const session = process.env.HEADWATERS_SESSION?.trim()
+    if (session) headers['X-Headwaters-Session'] = session
     const resp = await this.send(path, url, {
       method,
       headers,
@@ -566,8 +565,8 @@ export class HwClient {
       const body = (await resp.json()) as Record<string, unknown>
       // a model route held open past ~40s has already sent its 200, so a refusal after
       // that arrives as `held_error` ({detail, error: {message, status, ...}}), with
-      // X-Faces-Held: 1. It is the refusal, with its real status.
-      const held = resp.headers.get('x-faces-held') === '1' && body?.object !== 'state.reply' ? heldChatError(body) : undefined
+      // X-Headwaters-Held: 1. It is the refusal, with its real status.
+      const held = resp.headers.get('x-headwaters-held') === '1' && body?.object !== 'state.reply' ? heldChatError(body) : undefined
       if (held) {
         this.lastError = held
         return {status: held.statusCode, ok: false, data: {...body, error: held.message, text: held.message, held: true}}
@@ -853,7 +852,7 @@ export function streamErrorOf(data: string): HwAPIError | undefined {
  * answer.
  *
  * A face chat that is not streamed and runs past about 40 seconds is held
- * open: the server sends 200 at once with `X-Faces-Held: 1`, keeps the
+ * open: the server sends 200 at once with `X-Headwaters-Held: 1`, keeps the
  * connection alive with spaces, and writes the JSON when it is done. A JSON
  * parser skips the spaces. A refusal after that point arrives as the body,
  * with the real status in `error.status`:

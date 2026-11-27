@@ -47,7 +47,7 @@ export const MODEL_ARG_DESCRIPTION =
   'The upstream model over the downstream model: @<face>:<maestro>/<model>, e.g. @alice:maestro-1/gpt-5.4. ' +
   'Another account\'s face is @owner~face; a composite is "(@a | @b):maestro-1/<model>" (operators | & - ^). ' +
   'maestro-1-fast steers sooner, at 10 times the steering price. The model after the / is any chat model ' +
-  'in hw models:list, written as it is listed.'
+  'in hwai models:list, written as it is listed.'
 
 /** The flags every chat command takes. */
 export function chatFlags() {
@@ -123,10 +123,10 @@ export function replyText(body: Record<string, unknown>, endpoint: string): stri
 /** The cost and billing headers, for --json. */
 export function chatMeta(headers: Record<string, string>, endpoint: string, model: string): Record<string, string> {
   const meta: Record<string, string> = {}
-  if (headers['x-faces-provider']) meta.provider = headers['x-faces-provider']
-  if (headers['x-faces-cost-usd']) meta.cost_usd = headers['x-faces-cost-usd']
+  if (headers['x-headwaters-provider']) meta.provider = headers['x-headwaters-provider']
+  if (headers['x-headwaters-cost-usd']) meta.cost_usd = headers['x-headwaters-cost-usd']
   // oauth (the linked ChatGPT subscription paid) or credits.
-  if (headers['x-faces-billing']) meta.billing = headers['x-faces-billing']
+  if (headers['x-headwaters-billing']) meta.billing = headers['x-headwaters-billing']
   meta.endpoint = endpoint
   meta.model = model
   return meta

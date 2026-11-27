@@ -80,7 +80,7 @@ export default class FidelityRunCommand extends BaseCommand {
         const save = await this.ask('\nSave the conversation as a thread on the face, to compile? [y/N] ')
         if (save.trim().toLowerCase() === 'y') {
           const s = await fidelityPost(client, `/v1/fidelity/${seg(id)}/save-thread`, {})
-          this.log(`Saved as thread ${s.thread_id}. Compile it: hw face:thread:make ${s.thread_id}`)
+          this.log(`Saved as thread ${s.thread_id}. Compile it: hwai face:thread:make ${s.thread_id}`)
         }
       }
       return run

@@ -20,7 +20,7 @@ export default class CatalogDoctor extends BaseCommand {
     ...BaseCommand.baseFlags,
     fix: Flags.boolean({description: 'Rebuild missing or stale catalog entries from API', default: false}),
     generate: Flags.boolean({
-      description: 'Retired. Write a description with hw face:edit <alias> --description.',
+      description: 'Retired. Write a description with hwai face:edit <alias> --description.',
       default: false,
       hidden: true,
     }),
@@ -33,8 +33,8 @@ export default class CatalogDoctor extends BaseCommand {
     if (flags.generate) {
       this.error(
         '--generate is retired. Nothing was sent.\n' +
-          'Write a description with: hw face:edit <alias> --description "..."\n' +
-          'To repair the catalog, which is free: hw catalog:doctor --fix',
+          'Write a description with: hwai face:edit <alias> --description "..."\n' +
+          'To repair the catalog, which is free: hwai catalog:doctor --fix',
       )
     }
 
@@ -180,9 +180,9 @@ export default class CatalogDoctor extends BaseCommand {
       } else {
         for (const issue of issues) this.log(issue)
         this.log('')
-        this.log('Run hw catalog:doctor --fix to repair catalog')
+        this.log('Run hwai catalog:doctor --fix to repair catalog')
         if (noDescription.length > 0) {
-          this.log('Run hw catalog:doctor --generate --allow-paid to also write missing descriptions (billed)')
+          this.log('Run hwai catalog:doctor --generate --allow-paid to also write missing descriptions (billed)')
         }
       }
 

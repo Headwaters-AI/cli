@@ -1,13 +1,13 @@
 import {Args, Flags} from '@oclif/core'
-import {BaseCommand} from '../../../base.js'
-import {HwAPIError} from '../../../client.js'
-import {PAID_PLANS, PLAN_PRICE, PaidPlan, planName} from '../../../billing.js'
+import {BaseCommand} from '../../base.js'
+import {HwAPIError} from '../../client.js'
+import {PAID_PLANS, PLAN_PRICE, PaidPlan, planName} from '../../billing.js'
 
 export default class BillingSubscriptionPlan extends BaseCommand {
   static description =
     'Switch a subscription between Connect ($17/month) and Pro ($49/month) in place. The difference is ' +
     'prorated on the default card, and the new allowances apply at once. From the Free plan, subscribe ' +
-    'with billing:subscription:activate instead.'
+    'with account:activate instead.'
 
   static examples = [
     '<%= config.bin %> <%= command.id %> pro',
@@ -43,7 +43,7 @@ export default class BillingSubscriptionPlan extends BaseCommand {
       return {status: 'already_active', plan: want}
     }
     if (plan === 'free') {
-      this.error(`You have no subscription to switch. Subscribe with: hw billing:subscription:activate --plan ${want}`)
+      this.error(`You have no subscription to switch. Subscribe with: hwai account:activate --plan ${want}`)
     }
     if (plan === 'team') this.error('Your plan is managed by Headwaters, so it cannot be switched here.')
     // A switch while set to cancel is charged its proration and the plan still
@@ -51,7 +51,7 @@ export default class BillingSubscriptionPlan extends BaseCommand {
     if (sub.cancel_at_period_end === true) {
       this.error(
         `Your ${planName(plan)} plan is set to cancel, and a switch now would be charged while it still ends.\n` +
-          'Keep it first with: hw billing:subscription:activate, then switch.',
+          'Keep it first with: hwai account:activate, then switch.',
       )
     }
 
@@ -75,16 +75,16 @@ export default class BillingSubscriptionPlan extends BaseCommand {
         } else {
           this.error(
             `HTTP ${err.statusCode}: ${err.message}\n` +
-              `The plan is still ${planName(now?.plan ?? plan)}. Check with hw billing:subscription before trying again.`,
+              `The plan is still ${planName(now?.plan ?? plan)}. Check with hwai account:subscription before trying again.`,
           )
         }
       } else if (err instanceof HwAPIError) {
         // Set to cancel since it was read: refused before anything was charged.
         if (err.statusCode === 409 && err.errorCode === 'cancellation_pending') {
-          this.error(`HTTP 409: ${err.message}\nKeep it first with: hw billing:subscription:activate, then switch.`)
+          this.error(`HTTP 409: ${err.message}\nKeep it first with: hwai account:activate, then switch.`)
         }
         if (err.statusCode === 409 && plan === 'free') {
-          this.error(`HTTP 409: ${err.message}\nSubscribe with: hw billing:subscription:activate --plan ${want}`)
+          this.error(`HTTP 409: ${err.message}\nSubscribe with: hwai account:activate --plan ${want}`)
         }
         this.error(`HTTP ${err.statusCode}: ${err.message}`)
       } else {
@@ -94,7 +94,7 @@ export default class BillingSubscriptionPlan extends BaseCommand {
 
     if (!json) {
       this.log(`Switched from ${planName(data.previous_plan ?? plan)} to ${planName(data.plan ?? want)}. The new allowances apply now.`)
-      this.log('See them with: hw billing:subscription')
+      this.log('See them with: hwai account:subscription')
     }
     return data
   }

@@ -12,7 +12,7 @@ export default class FidelityStart extends BaseCommand {
     'it. The picks must be the person\'s own: an agent shows both answers and passes on the choice it is ' +
     'given, never its own. The score is saved on the face, and a new run replaces it. On Connect or Pro ' +
     'with ChatGPT linked, answers from Codex-eligible models run on the ChatGPT plan; the rest, and grading ' +
-    'a correction, is paid from credits. To play it in the terminal, use hw face:fidelity:run.'
+    'a correction, is paid from credits. To play it in the terminal, use hwai face:fidelity:run.'
 
   static examples = [
     '<%= config.bin %> <%= command.id %> alice',

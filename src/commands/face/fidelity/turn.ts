@@ -8,7 +8,7 @@ import {seg} from '../../../utils.js'
 export default class FidelityTurn extends BaseCommand {
   static description =
     'Send the next turn\'s message on a fidelity run. Prints two answers, a and b, in random order, with ' +
-    'nothing saying which is the face. Pick one with hw face:fidelity:pick before the next turn.'
+    'nothing saying which is the face. Pick one with hwai face:fidelity:pick before the next turn.'
 
   static examples = ['<%= config.bin %> <%= command.id %> <run> -m "How was the trip?"']
 
@@ -19,7 +19,7 @@ export default class FidelityTurn extends BaseCommand {
   }
 
   static args = {
-    run_id: Args.string({description: 'Fidelity run id, from hw face:fidelity:start', required: true}),
+    run_id: Args.string({description: 'Fidelity run id, from hwai face:fidelity:start', required: true}),
   }
 
   async run(): Promise<unknown> {
@@ -45,7 +45,7 @@ export default class FidelityTurn extends BaseCommand {
     const turn = Number(data.turn)
     for (const line of answerLines(turn, (data.answers ?? {}) as Record<string, unknown>)) this.log(line)
     this.log('')
-    this.log(`Pick one: hw face:fidelity:pick ${args.run_id} a|b [--correction "what they would have said"]`)
+    this.log(`Pick one: hwai face:fidelity:pick ${args.run_id} a|b [--correction "what they would have said"]`)
     return data
   }
 }

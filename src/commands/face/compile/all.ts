@@ -32,7 +32,7 @@ export default class CompileAll extends BaseCommand {
     const parts = [...blocked.entries()].map(([why, n]) => `${n} ${why}`).join(', ')
     this.log(`Skipping ${total} the server would refuse: ${parts}.`)
     if (blocked.has('no medium declared')) {
-      this.log('  Declare one on each with: hw face:doc:edit <id> --medium essay')
+      this.log('  Declare one on each with: hwai face:doc:edit <id> --medium essay')
     }
   }
 
@@ -222,7 +222,7 @@ export default class CompileAll extends BaseCommand {
     if (!json) {
       this.log(`\nCompile complete: ${compiled} succeeded, ${failed} failed`)
       if (scheduled > 0) {
-        this.log(`${scheduled} scheduled to start on their own. Follow them with: hw face:compile:status`)
+        this.log(`${scheduled} scheduled to start on their own. Follow them with: hwai face:compile:status`)
       }
     }
 

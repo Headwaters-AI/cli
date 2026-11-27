@@ -66,11 +66,11 @@ export function nextStep(run: FidelityRun): string | undefined {
   if (!run.next) {
     return run.thread_id
       ? undefined
-      : `Keep the conversation as a thread on the face, to compile: hw face:fidelity:save-thread ${id}`
+      : `Keep the conversation as a thread on the face, to compile: hwai face:fidelity:save-thread ${id}`
   }
   return run.next.awaiting === 'choice'
-    ? `Pick the answer that sounds more like the person: hw face:fidelity:pick ${id} a|b [--correction "..."]`
-    : `Send turn ${run.next.turn}'s message: hw face:fidelity:turn ${id} -m "..."`
+    ? `Pick the answer that sounds more like the person: hwai face:fidelity:pick ${id} a|b [--correction "..."]`
+    : `Send turn ${run.next.turn}'s message: hwai face:fidelity:turn ${id} -m "..."`
 }
 
 /** The run's state in labelled lines, without the turns' texts. */
@@ -127,17 +127,17 @@ export function fidelityHint(err: HwAPIError, on: {run?: string; alias?: string}
   const id = on.run ?? '<run>'
   switch (err.errorCode) {
     case 'fidelity_choice_pending':
-      return `Pick one first: hw face:fidelity:pick ${id} a|b`
+      return `Pick one first: hwai face:fidelity:pick ${id} a|b`
     case 'fidelity_run_finished':
-      return `Read the score: hw face:fidelity:get ${id}. Start another with hw face:fidelity:start ${on.alias ?? '<alias>'}.`
+      return `Read the score: hwai face:fidelity:get ${id}. Start another with hwai face:fidelity:start ${on.alias ?? '<alias>'}.`
     case 'fidelity_run_open':
-      return `See where it stands: hw face:fidelity:get ${id}`
+      return `See where it stands: hwai face:fidelity:get ${id}`
     case 'fidelity_unknown_model':
-      return 'List the chat models with: hw models:list'
+      return 'List the chat models with: hwai models:list'
     case 'fidelity_nothing_compiled':
-      return `Add a source with: hw face:compile ${on.alias ?? '<alias>'} --file <file>`
+      return `Add a source with: hwai face:compile ${on.alias ?? '<alias>'} --file <file>`
     case 'fidelity_run_not_found':
-      return 'Run ids are printed by hw face:fidelity:start.'
+      return 'Run ids are printed by hwai face:fidelity:start.'
     default:
       return undefined
   }

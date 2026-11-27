@@ -8,7 +8,7 @@ export default class BillingLlmCosts extends BaseCommand {
   static description =
     'List available LLMs, their per-token costs and what you have spent on each. Models are listed once, ' +
     'under the id their lab gives them. Maestro and compile prices, and what each plan includes, are listed ' +
-    'after the table. For the full catalog, with endpoints and which models are Codex-eligible, see hw models:list.'
+    'after the table. For the full catalog, with endpoints and which models are Codex-eligible, see hwai models:list.'
 
   static flags = {
     ...BaseCommand.baseFlags,
