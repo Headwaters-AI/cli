@@ -10,7 +10,7 @@ Commands are grouped by topic, as `hwai topic:command`: `face:*`, `maestro:*` an
 ## Installation
 
 ```bash
-npm install -g hwai
+npm install -g @headwaters-ai/cli
 ```
 
 Requires Node.js >= 18.

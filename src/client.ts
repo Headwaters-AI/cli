@@ -28,10 +28,10 @@ export function outOfDateHint(latest?: string | null): string {
   }
 
   if (latest && CLI_VERSION) {
-    return `Your hwai CLI (${CLI_VERSION}) is out of date; the latest is ${latest}. Update with \`npm install -g hwai@latest\` and try again.`
+    return `Your hwai CLI (${CLI_VERSION}) is out of date; the latest is ${latest}. Update with \`npm install -g @headwaters-ai/cli@latest\` and try again.`
   }
 
-  return `Your hwai CLI${version} may be out of date. Update with \`npm install -g hwai@latest\` and try again.`
+  return `Your hwai CLI${version} may be out of date. Update with \`npm install -g @headwaters-ai/cli@latest\` and try again.`
 }
 
 /** -1, 0 or 1 for dotted numeric versions; anything after a `-` is ignored. */
@@ -67,7 +67,7 @@ export async function latestCliVersion(): Promise<string | null> {
   }
 
   try {
-    const resp = await fetch('https://registry.npmjs.org/hwai/latest', {signal: AbortSignal.timeout(1500)})
+    const resp = await fetch('https://registry.npmjs.org/@headwaters-ai%2fcli/latest', {signal: AbortSignal.timeout(1500)})
     if (!resp.ok) return null
     const latest = ((await resp.json()) as {version?: string}).version ?? null
     if (latest) {

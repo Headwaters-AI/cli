@@ -1,7 +1,8 @@
 name: Publish
 
-# Publishes hwai to npm with provenance. Waits for the hwai package on npm and
-# its trusted publisher for this workflow (#2080 item 1.1). Runs only when a release is
+# Publishes @headwaters-ai/cli (the hwai command) to npm with provenance. Waits for the
+# @headwaters-ai/cli package on npm and its trusted publisher for this workflow (#2080
+# item 1.1). Runs only when a release is
 # published, from a `v*` tag (the npm environment allows nothing else), and only for a
 # commit on main that the release gate passed. Each release opens a review issue in
 # the gate; npm allows a clean unpublish for 72 hours. The version is the tag's, so

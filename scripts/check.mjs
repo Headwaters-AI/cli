@@ -2305,7 +2305,7 @@ await compileWaitTimeout()
 async function cleanStart() {
   const OLD_COMMAND = /\b(?:faces|hw)\s+(?:[a-z][a-z-]*:[a-z]|choices\b|decide\b|auth\b|face\b)/
   const OLD_VAR = /\b(?:FACES|HW)_[A-Z_]+/
-  const OLD_PLACES = /~\/\.faces\b|['"`]\.faces['"`]|\.faces\/state|@faces-sh\/|github\.com\/faces-sh\/|@headwaters-ai\/cli/
+  const OLD_PLACES = /~\/\.faces\b|['"`]\.faces['"`]|\.faces\/state|@faces-sh\/|github\.com\/faces-sh\//
   const OLD_TOPICS = ['compile', 'chat', 'premise', 'conversation', 'session', 'style', 'fidelity', 'benchmark', 'auth', 'billing', 'keys']
   const files = ['README.md', 'package.json']
   const walk = (d) => { for (const e of fs.readdirSync(d, {withFileTypes: true})) { const f = path.join(d, e.name); if (e.isDirectory()) walk(f); else if (f.endsWith('.ts')) files.push(f) } }
@@ -2319,7 +2319,7 @@ async function cleanStart() {
   eq('clean start: no faces command, FACES_ variable or ~/.faces in the source or README', hits, [])
 
   const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'))
-  eq('clean start: the package and its binary', [pkg.name, Object.keys(pkg.bin), pkg.oclif.bin, pkg.oclif.dirname], ['hwai', ['hwai'], 'hwai', 'headwaters'])
+  eq('clean start: the package and its binary', [pkg.name, Object.keys(pkg.bin), pkg.oclif.bin, pkg.oclif.dirname], ['@headwaters-ai/cli', ['hwai'], 'hwai', 'headwaters'])
   eq('clean start: no old topic', Object.keys(pkg.oclif.topics).filter((t) => OLD_TOPICS.includes(t.split(':')[0])), [])
 
   const {Config} = await import('@oclif/core')
@@ -2450,7 +2450,7 @@ await cleanStart()
   const bash = (command) => ({tool_name: 'Bash', tool_input: {command}})
   eq('hud: state writes', ['add', 'edit', 'delete', 'refine', 'choices', 'decide', 'claim'].map((v) => isStateWrite(bash(`hwai state:${v} "k"`))), [true, true, true, true, true, true, true])
   eq('hud: reads and other calls are not writes', [isStateWrite(bash('hwai state:get')), isStateWrite(bash('hwai state:hud')), isStateWrite(bash('ls')),
-    isStateWrite({tool_name: 'Read', tool_input: {file_path: 'hwai state:add'}}), isStateWrite({}), isStateWrite(bash('npx hwai state:addx')), isStateWrite(bash('hw state:add "k"'))], [false, false, false, false, false, false, false])
+    isStateWrite({tool_name: 'Read', tool_input: {file_path: 'hwai state:add'}}), isStateWrite({}), isStateWrite(bash('hwai state:addx')), isStateWrite(bash('hw state:add "k"'))], [false, false, false, false, false, false, false])
   eq('hud: a write inside a longer command', isStateWrite(bash('cd x && HEADWATERS_SESSION=1 hwai state:edit "k" --status verified')), true)
   eq('hud: a command given as a list', isStateWrite({tool_name: 'Bash', tool_input: {command: ['hwai', 'state:decide', 'k']}}), true)
 
