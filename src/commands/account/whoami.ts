@@ -73,7 +73,7 @@ export default class AuthWhoami extends BaseCommand {
     const fallsBack = keyFailed && keySaved && Boolean(jwtResult?.ok)
     const winner = apiKeyResult?.ok ? apiKeyResult : (!apiKey || fallsBack) && jwtResult?.ok ? jwtResult : null
     const winnerMethod = apiKeyResult?.ok ? 'api_key' : winner ? 'jwt' : null
-    if (fallsBack) diag.warning = 'The saved API key is refused, so commands fall back to the saved login. Remove the key with: hw config:set api_key ""'
+    if (fallsBack) diag.warning = 'The saved API key is refused, so commands fall back to the saved login. Remove the key with: hwai config:set api_key ""'
 
     diag.authenticated = Boolean(winner)
     diag.auth_method = winnerMethod
@@ -90,7 +90,7 @@ export default class AuthWhoami extends BaseCommand {
     }
 
     if (!json) {
-      // stdout, so `hw account:whoami | grep status` finds it.
+      // stdout, so `hwai account:whoami | grep status` finds it.
       const jwtLine = !token ? 'not configured' : jwtResult ? (jwtResult.ok ? 'valid' : `failed (${jwtResult.error})`) : 'not checked (the API key works)'
       this.log('Auth diagnostic:')
       this.log(`  base_url:       ${baseUrl}`)

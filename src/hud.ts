@@ -2,7 +2,7 @@
  * The state's heads-up display (#2091): a short, fixed-layout summary of a state's proof that
  * keeps an agent and its human oriented over a long session. It is read from the proof as
  * `state:get --json` reads it (GET /v1/states/{id}/proof?format=json), and never shows the tree;
- * the detail is one `hw state:get "<key>"` away.
+ * the detail is one `hwai state:get "<key>"` away.
  *
  * Everything here is pure, so scripts/check.mjs covers it without a network: the layout, the
  * toggle file, which tool calls are state writes, and the post-tool throttle.
@@ -205,7 +205,7 @@ export function claims(premises: ProofPremise[], as?: string): string | undefine
 export function hudLines(proof: Proof, id: string, as?: string, goal?: string): string[] {
   const premises = proof.premises ?? []
   if (premises.length === 0) {
-    return [`HUD · ${shortId(id)} · empty`, 'next: add the goal: hw state:add "<goal>" "<what it is>" --role goal']
+    return [`HUD · ${shortId(id)} · empty`, 'next: add the goal: hwai state:add "<goal>" "<what it is>" --role goal']
   }
   const root = chooseRoot(premises, goal) as ProofPremise
   const others = premises.filter(isRoot).filter((r) => r.key !== root.key).length
@@ -221,7 +221,7 @@ export function hudLines(proof: Proof, id: string, as?: string, goal?: string): 
   const c = claims(premises, as)
   if (c) parts.push(c)
 
-  return [head, parts.join(' · '), `drill: hw state:get "${(next.premise ?? root).key}"`]
+  return [head, parts.join(' · '), `drill: hwai state:get "${(next.premise ?? root).key}"`]
 }
 
 /** One line for a status bar: the HUD's first two lines, shorter. */
@@ -277,9 +277,9 @@ export function hudShows(mode: HudMode, hasState: boolean): boolean {
 
 // ---- the post-tool throttle -------------------------------------------------------------------
 
-const WRITE = /\bhw\s+state:(add|edit|delete|refine|choices|decide|claim)\b/
+const WRITE = /\bhwai\s+state:(add|edit|delete|refine|choices|decide|claim)\b/
 
-/** Whether a hook event's tool call was an `hw state:` write (Claude Code and Codex both name it Bash). */
+/** Whether a hook event's tool call was an `hwai state:` write (Claude Code and Codex both name it Bash). */
 export function isStateWrite(event: Record<string, unknown>): boolean {
   const input = event.tool_input as Record<string, unknown> | string | undefined
   if (input === undefined || input === null) return false

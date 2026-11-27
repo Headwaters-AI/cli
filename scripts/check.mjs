@@ -431,8 +431,8 @@ eq('card line, not default', cardLine({id: 'pm_2', brand: 'mastercard', last4: '
 
 // --- refusals that hinge on api_fallback ----------------------------------------
 eq('429 allowance gets guidance', typeof refusalGuidance(429, undefined, 'Connect allowance of $20 used'), 'string')
-eq('429 allowance guidance names the setting', refusalGuidance(429, undefined, 'Your Connect plan has used its weekly allowance (1,600,000 of 1,600,000 tokens).'), 'To continue on credits until it resets: hw account:preferences api_fallback true')
-eq('402 says top up', refusalGuidance(402, undefined, 'no credit'), 'Add credit with: hw account:topup --amount <usd>')
+eq('429 allowance guidance names the setting', refusalGuidance(429, undefined, 'Your Connect plan has used its weekly allowance (1,600,000 of 1,600,000 tokens).'), 'To continue on credits until it resets: hwai account:preferences api_fallback true')
+eq('402 says top up', refusalGuidance(402, undefined, 'no credit'), 'Add credit with: hwai account:topup --amount <usd>')
 eq('429 rate limit is not told about api_fallback', /api_fallback/.test(refusalGuidance(429, undefined, 'Rate limit exceeded') ?? ''), false)
 eq('502 oauth_incomplete gets guidance', typeof refusalGuidance(502, 'oauth_incomplete', 'stopped'), 'string')
 eq('502 other does not', refusalGuidance(502, undefined, 'upstream failed'), undefined)
@@ -592,7 +592,7 @@ async function warmUp() {
 }
 await warmUp()
 
-eq('409 hint: recompile', /hw face:sources alice/.test(faceRefusalHint(new HwAPIError(409, 'm'), '@alice:maestro-1/gpt-5.4')), true)
+eq('409 hint: recompile', /hwai face:sources alice/.test(faceRefusalHint(new HwAPIError(409, 'm'), '@alice:maestro-1/gpt-5.4')), true)
 eq('409 hint: someone else\'s face', faceRefusalHint(new HwAPIError(409, 'm'), '@head~socrates:maestro-1/x'), 'head:socrates needs recompiling by its owner before it can answer.')
 eq('faceStyles reads styles', faceStyles({styles: ['email', 'essay']}), ['email', 'essay'])
 eq('faceStyles: none', [faceStyles({styles: []}), faceStyles({}), faceStyles({styles: null})], [[], [], []])
@@ -600,8 +600,8 @@ eq('503 hint: try again', faceRefusalHint(new HwAPIError(503, 'm'), '@alice:maes
 eq('503 hint names the wait', /in 30s/.test(faceRefusalHint(new HwAPIError(503, 'm', {retryAfter: 30}), '@alice:maestro-1/x')), true)
 eq('503 hint: no warm-up', /warm/i.test(faceRefusalHint(new HwAPIError(503, 'm', {retryAfter: 30}), '@alice:maestro-1/x') ?? ''), false)
 eq('504 hint: ask again', faceRefusalHint(new HwAPIError(504, 'm'), '@alice:maestro-1/x'), 'The face did not finish within 300 seconds. Ask again.')
-eq('409 nothing compiled: a first source', /^Give it a first source: hw face:compile testo --file <file>\./.test(faceRefusalHint(new HwAPIError(409, 'this face has nothing compiled'), '@testo:maestro-1/x') ?? ''), true)
-eq('409 nothing compiled on a formula: each face', faceRefusalHint(new HwAPIError(409, 'this face has nothing compiled'), '(@a | @b):maestro-1/x'), 'Every face in (@a | @b) needs something compiled: hw face:compile <alias> --file <file> for each.')
+eq('409 nothing compiled: a first source', /^Give it a first source: hwai face:compile testo --file <file>\./.test(faceRefusalHint(new HwAPIError(409, 'this face has nothing compiled'), '@testo:maestro-1/x') ?? ''), true)
+eq('409 nothing compiled on a formula: each face', faceRefusalHint(new HwAPIError(409, 'this face has nothing compiled'), '(@a | @b):maestro-1/x'), 'Every face in (@a | @b) needs something compiled: hwai face:compile <alias> --file <file> for each.')
 eq('409 recompile on a formula: no face:sources of a formula', /face:sources/.test(faceRefusalHint(new HwAPIError(409, 'compiled before the current version'), '(@a & @b):maestro-1/x') ?? ''), false)
 eq('422 empty_composite: says the result is empty', /Nothing is left once the formula is applied/.test(refusalGuidance(422, 'empty_composite', 'the intersection between these two faces is null') ?? ''), true)
 eq('422 no hint', faceRefusalHint(new HwAPIError(422, 'm'), '@alice:maestro-1/x'), undefined)
@@ -611,7 +611,7 @@ eq('422 no hint', faceRefusalHint(new HwAPIError(422, 'm'), '@alice:maestro-1/x'
 
 
 // --- a chat aimed at a decision model ------------------------------------------
-eq('decision model refused for chat', decisionModelError('jev-latest'), 'jev-latest is a decision model, not a chat model; use `hw maestro:decide --face @<face> --decoder jev-latest`')
+eq('decision model refused for chat', decisionModelError('jev-latest'), 'jev-latest is a decision model, not a chat model; use `hwai maestro:decide --face @<face> --decoder jev-latest`')
 eq('decision model match ignores case', /decision model/.test(decisionModelError('Clef-Flash') || ''), true)
 eq('chat model passes', decisionModelError('gpt-5.4'), undefined)
 eq('no model passes', decisionModelError(undefined), undefined)
@@ -809,7 +809,7 @@ await pathGuard()
 eq('versions: equal', compareVersions('1.20.1', '1.20.1'), 0)
 eq('versions: patch behind', compareVersions('1.20.0', '1.20.1'), -1)
 eq('versions: numeric, not text', compareVersions('1.10.0', '1.9.9'), 1)
-eq('hint: on the latest it is a bug', /looks like a hw CLI bug/.test(outOfDateHint(CLI_VERSION)), true)
+eq('hint: on the latest it is a bug', /looks like a hwai CLI bug/.test(outOfDateHint(CLI_VERSION)), true)
 eq('hint: on the latest it never says update', /npm install/.test(outOfDateHint(CLI_VERSION)), false)
 eq('hint: behind names the latest', outOfDateHint('99.0.0').includes('the latest is 99.0.0'), true)
 eq('hint: unknown keeps "may be"', /may be out of date/.test(outOfDateHint(null)), true)
@@ -838,7 +838,7 @@ async function keyFields() {
   })
   await new Promise((r) => srv.listen(0, r))
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'faces-check-'))
-  const env = {...process.env, HOME: home, HW_BASE_URL: `http://127.0.0.1:${srv.address().port}`, HW_TOKEN: 'jwt-check'}
+  const env = {...process.env, HOME: home, HEADWATERS_BASE_URL: `http://127.0.0.1:${srv.address().port}`, HEADWATERS_TOKEN: 'jwt-check'}
   const run = (args) => new Promise((r) => execFile(process.execPath, ['bin/run.js', ...args], {env}, () => r()))
   try {
     await run(['key:create', '--name', 'n', '--no-save', '--expires-days', '7', '--budget', '2.5', '--face', 'alice', '--model', 'gpt-5-mini', '--json'])
@@ -871,7 +871,7 @@ async function loginOnlyCommands() {
   })
   await new Promise((r) => srv.listen(0, r))
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'faces-check-'))
-  const env = {...process.env, HOME: home, HW_BASE_URL: `http://127.0.0.1:${srv.address().port}`, HW_TOKEN: 'jwt-check', HW_API_KEY: 'sk-faces-check'}
+  const env = {...process.env, HOME: home, HEADWATERS_BASE_URL: `http://127.0.0.1:${srv.address().port}`, HEADWATERS_TOKEN: 'jwt-check', HEADWATERS_API_KEY: 'sk-faces-check'}
   const run = (args) => new Promise((r) => execFile(process.execPath, ['bin/run.js', ...args], {env}, () => r()))
   try {
     for (const args of [
@@ -935,8 +935,8 @@ async function errorsAndConfirmations() {
   })
   await new Promise((r) => srv.listen(0, r))
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'faces-check-'))
-  const base = {...process.env, HOME: home, HW_BASE_URL: `http://127.0.0.1:${srv.address().port}`}
-  const run = (args, env = {...base, HW_API_KEY: 'sk-check'}) => new Promise((r) => {
+  const base = {...process.env, HOME: home, HEADWATERS_BASE_URL: `http://127.0.0.1:${srv.address().port}`}
+  const run = (args, env = {...base, HEADWATERS_API_KEY: 'sk-check'}) => new Promise((r) => {
     const child = execFile(process.execPath, ['bin/run.js', ...args], {env}, (err, stdout, stderr) => r({code: err ? err.code : 0, stdout, stderr}))
     child.stdin.end()
   })
@@ -983,7 +983,7 @@ async function errorsAndConfirmations() {
     eq('style 402: estimate, balance and top-up', [/up to \$3\.40/.test(r.stderr), /\$1\.25/.test(r.stderr), /account:topup/.test(r.stderr)], [true, true, true])
     r = await run(['face:style:make', 'alice', '--source', 'd1', '--allow-paid', '--json'])
     eq('style 402: --json carries the figures', [json(r)?.error?.error_code, json(r)?.error?.estimated_usd, json(r)?.error?.balance_usd], ['insufficient_credit_for_style_build', 3.4, 1.25])
-    r = await run(['face:list', '--json'], {...base, HW_API_KEY: '', HW_TOKEN: ''})
+    r = await run(['face:list', '--json'], {...base, HEADWATERS_API_KEY: '', HEADWATERS_TOKEN: ''})
     eq('json error: no credentials still answers in JSON', /Authentication required/.test(json(r)?.error?.message ?? ''), true)
     r = await run(['face:list', '--json', '--toon'])
     eq('json error: --json with --toon answers in JSON', json(r) !== undefined, true)
@@ -1005,7 +1005,7 @@ async function credentials() {
     const code = `import('${new URL('../dist/config.js', import.meta.url).href}').then((c) => {
       try { const r = c.resolveCredentials({}, ${JSON.stringify(base)}); console.log(JSON.stringify({token: r.token ?? null, apiKey: r.apiKey ?? null, withheld: Boolean(r.withheld)})) }
       catch (e) { console.log(JSON.stringify({error: e.message})) } })`
-    const out = spawnSync(process.execPath, ['--input-type=module', '-e', code], {env: {...process.env, HOME: home, HW_TOKEN: '', HW_API_KEY: '', ...env}, encoding: 'utf8'})
+    const out = spawnSync(process.execPath, ['--input-type=module', '-e', code], {env: {...process.env, HOME: home, HEADWATERS_TOKEN: '', HEADWATERS_API_KEY: '', ...env}, encoding: 'utf8'})
     return JSON.parse(out.stdout.trim().split('\n').at(-1))
   }
   try {
@@ -1014,8 +1014,8 @@ async function credentials() {
     eq('creds: withheld from another host', probe(saved, 'https://httpbin.org/anything'), {token: null, apiKey: null, withheld: true})
     eq('creds: an older config belongs to its base_url', probe({api_key: 'sk-faces-x', base_url: 'https://staging.faces.sh'}, 'https://staging.faces.sh'), {token: null, apiKey: 'sk-faces-x', withheld: false})
     eq('creds: an older config with no base_url belongs to the default', probe({token: 't'}, 'https://example.com').withheld, true)
-    eq('creds: an explicit key is always used', probe(saved, 'https://example.com', {HW_API_KEY: 'sk-faces-env'}).apiKey, 'sk-faces-env')
-    eq('creds: never over plain http to another machine', /plain http/.test(probe(saved, 'http://example.com', {HW_API_KEY: 'sk-faces-env'}).error ?? ''), true)
+    eq('creds: an explicit key is always used', probe(saved, 'https://example.com', {HEADWATERS_API_KEY: 'sk-faces-env'}).apiKey, 'sk-faces-env')
+    eq('creds: never over plain http to another machine', /plain http/.test(probe(saved, 'http://example.com', {HEADWATERS_API_KEY: 'sk-faces-env'}).error ?? ''), true)
     eq('creds: plain http to localhost is fine', probe({token: 't', credentials_base_url: 'http://localhost:8000'}, 'http://localhost:8000').token, 't')
     // A corrupt config is kept, not overwritten.
     fs.writeFileSync(cfg, '{not json')
@@ -1144,7 +1144,7 @@ async function failedStyleJob() {
   })
   await new Promise((r) => srv.listen(0, r))
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'faces-check-'))
-  const env = {...process.env, HOME: home, HW_BASE_URL: `http://127.0.0.1:${srv.address().port}`, HW_TOKEN: 'jwt-check'}
+  const env = {...process.env, HOME: home, HEADWATERS_BASE_URL: `http://127.0.0.1:${srv.address().port}`, HEADWATERS_TOKEN: 'jwt-check'}
   const run = (args) => new Promise((r) => execFile(process.execPath, ['bin/run.js', ...args], {env}, (err, stdout) => r({code: err ? err.code : 0, stdout})))
   try {
     const text = await run(['face:style:status', 'j1'])
@@ -1180,7 +1180,7 @@ async function groupNames() {
   })
   await new Promise((r) => srv.listen(0, r))
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'faces-check-'))
-  const env = {...process.env, HOME: home, HW_BASE_URL: `http://127.0.0.1:${srv.address().port}`, HW_TOKEN: 'jwt-check'}
+  const env = {...process.env, HOME: home, HEADWATERS_BASE_URL: `http://127.0.0.1:${srv.address().port}`, HEADWATERS_TOKEN: 'jwt-check'}
   const run = (args) => new Promise((r) => execFile(process.execPath, ['bin/run.js', ...args], {env}, (err, stdout, stderr) => r({code: err?.code ?? 0, out: stdout, err: stderr})))
   try {
     let r = await run(['group:list'])
@@ -1230,7 +1230,7 @@ await groupNames()
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'faces-check-'))
   const file = path.join(home, 'old.json')
   fs.writeFileSync(file, JSON.stringify({version: 2, faces: [], teams: [{name: 'Panel', description: null, protocol: null, tags: [], members: []}]}))
-  const out = spawnSync(process.execPath, ['bin/run.js', 'catalog:restore', file], {env: {...process.env, HOME: home, HW_BASE_URL: 'http://127.0.0.1:9', HW_TOKEN: 'x'}, encoding: 'utf8'})
+  const out = spawnSync(process.execPath, ['bin/run.js', 'catalog:restore', file], {env: {...process.env, HOME: home, HEADWATERS_BASE_URL: 'http://127.0.0.1:9', HEADWATERS_TOKEN: 'x'}, encoding: 'utf8'})
   eq('restore: an older backup\'s groups are counted', /Groups: 1/.test(out.stdout + out.stderr), true)
   fs.rmSync(home, {recursive: true, force: true})
 }
@@ -1290,7 +1290,7 @@ eq('openai answers: choice probabilities by value', back.why.probabilities, {law
 eq('openai answers: score legend from the sent levels', back.mood.legend, {0: 'calm', 1: 'furious'})
 
 // --- refusals, error codes and duplicate top-ups --------------------------------
-eq('402 no card: no repeated sentence', refusalGuidance(402, undefined, 'No payment method on file. Add a card first.'), 'Add a card with: hw account:card-add')
+eq('402 no card: no repeated sentence', refusalGuidance(402, undefined, 'No payment method on file. Add a card first.'), 'Add a card with: hwai account:card-add')
 eq('failure: error_code wins over the text', /No ChatGPT account is linked/.test(jobFailureMessage('sign-in expired', false, 'chatgpt_auth')), true)
 eq('failure: no code falls back to the text', /most likely expired/.test(jobFailureMessage('CHATGPT_AUTH: x', true, null)), true)
 
@@ -1359,7 +1359,7 @@ async function fidelityFlow() {
   })
   await new Promise((r) => srv.listen(0, r))
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'faces-check-'))
-  const env = {...process.env, HOME: home, HW_BASE_URL: `http://127.0.0.1:${srv.address().port}`, HW_TOKEN: 'jwt-check'}
+  const env = {...process.env, HOME: home, HEADWATERS_BASE_URL: `http://127.0.0.1:${srv.address().port}`, HEADWATERS_TOKEN: 'jwt-check'}
   const run = (args) => new Promise((r) => execFile(process.execPath, ['bin/run.js', ...args], {env}, (err, stdout, stderr) => r({code: err?.code ?? 0, out: stdout + stderr})))
   try {
     const g = await run(['causes', 'ana'])
@@ -1367,7 +1367,7 @@ async function fidelityFlow() {
     let r = await run(['face:fidelity:start', 'ana'])
     eq('face:fidelity:start names the next step', /run:\s+r1[\s\S]*face:fidelity:turn r1 -m/.test(r.out), true)
     r = await run(['face:fidelity:start', 'bare'])
-    eq('fidelity:start: nothing compiled gets a hint', /Add a source with: hw face:compile bare --file/.test(r.out), true)
+    eq('fidelity:start: nothing compiled gets a hint', /Add a source with: hwai face:compile bare --file/.test(r.out), true)
     r = await run(['face:fidelity:turn', 'r1', '-m', 'slow'])
     eq('fidelity:turn: a held refusal is an error', [r.code, /HTTP 502: the face could not answer/.test(r.out)], [2, true])
     r = await run(['face:fidelity:turn', 'r1', '-m', 'hello'])
@@ -1383,7 +1383,7 @@ async function fidelityFlow() {
     r = await run(['face:fidelity:get', 'r1'])
     eq('face:fidelity:get reveals the face once done', /turn 1: picked a, the face, accepted, scored 1\n\s+turn 2: picked b, the competitor, corrected, scored 0\.7/.test(r.out), true)
     r = await run(['face:fidelity:save-thread', 'r1'])
-    eq('face:fidelity:save-thread names the compile', /Saved as thread t9\nCompile it into the face: hw face:thread:make t9/.test(r.out), true)
+    eq('face:fidelity:save-thread names the compile', /Saved as thread t9\nCompile it into the face: hwai face:thread:make t9/.test(r.out), true)
     r = await run(['face:fidelity:run', 'ana'])
     eq('face:fidelity:run needs a terminal', /needs a person at a terminal/.test(r.out), true)
   } finally {
@@ -1413,7 +1413,7 @@ eq(
   ],
 )
 eq('benchmark: too close to call', resultLines({winner: null, gap: 0.01, ci95: {lo: -0.03, hi: 0.05, resolved: false}})[0], 'winner:     neither, too close to call')
-eq('benchmark: no style gets a hint', benchmarkHint(new HwAPIError(422, 'x', {errorCode: 'benchmark_no_style'}), 'ana'), 'Build its style with: hw face:style:make ana --all')
+eq('benchmark: no style gets a hint', benchmarkHint(new HwAPIError(422, 'x', {errorCode: 'benchmark_no_style'}), 'ana'), 'Build its style with: hwai face:style:make ana --all')
 
 // --- document vs thread: a labelled exchange is flagged, an essay is not --------
 const interview = 'Interviewer: Tell me about yourself.\nAda: I am a designer in Lisbon.\n' +
@@ -1431,7 +1431,7 @@ eq('transcript warning names the thread upload', transcriptWarningLines(intervie
   'Warning: interview.txt reads as an exchange between speakers (Interviewer, Ada).',
   "A document is the face's own writing, so every line in it, other speakers included, is read as the face's words.",
   "Upload an interview, transcript or dialogue as a thread instead, naming the face's speaker:",
-  '  hw face:compile ada --file interview.txt --kind thread --face-speaker NAME',
+  '  hwai face:compile ada --file interview.txt --kind thread --face-speaker NAME',
 ])
 
 // --- held chat: a refusal in a 200 body is an error, an answer never is ---------
@@ -1489,7 +1489,7 @@ const SERVER_SAYS = "This looks like a conversation between several speakers. To
 eq('server transcript warning: its message and the thread upload, nothing else',
   documentWarningLines({document_id: 'd1', warnings: [{code: 'looks_like_transcript', message: SERVER_SAYS}]}, interview, 'ada', 'interview.txt'), [
     `Warning: ${SERVER_SAYS}`,
-    '  hw face:compile ada --file interview.txt --kind thread --face-speaker NAME',
+    '  hwai face:compile ada --file interview.txt --kind thread --face-speaker NAME',
   ])
 eq('server says nothing: nothing, even for a transcript', documentWarningLines({document_id: 'd1', warnings: []}, interview, 'ada', 'interview.txt'), [])
 eq('older server (no warnings field): our own check',
@@ -1705,9 +1705,9 @@ eq('choices lines: in a state, each option id and the list id', choicesLines({ob
   'Added to the state as cho_1. Name an option id (or cho_1 for all of them) in --premise-depends-on or decide --depends-on.'])
 eq('choices lines: the question it would ask', choicesLines({object: 'choices.question', model: '@alice:maestro-1', question: 'Why?', alternatives: ['How?']}), [
   '@alice would ask: Why?', '', 'Or:', '  - How?', '', 'Ask it with --question to get the options.'])
-eq('choices hint: a long situation goes in a state', /hw state:create --use[\s\S]*hw state:choices/.test(choicesHint(422, 'This description is 5201 tokens; version 23 reads prose of at most 3,000.', '@alice:maestro-1')), true)
-eq('choices hint: nothing compiled names the upload', choicesHint(409, '@alice has nothing compiled, so ...', '@alice:maestro-1'), 'Give it a first source: hw face:compile alice --file <file>.')
-eq('choices hint: an unknown depends_on names the listing', choicesHint(422, '`depends_on` names no premise or decision (or choices option) in this conversation: x', '@alice:maestro-1'), 'Name premise keys, decision ids and choices ids already in the state (hw state:items).')
+eq('choices hint: a long situation goes in a state', /hwai state:create --use[\s\S]*hwai state:choices/.test(choicesHint(422, 'This description is 5201 tokens; version 23 reads prose of at most 3,000.', '@alice:maestro-1')), true)
+eq('choices hint: nothing compiled names the upload', choicesHint(409, '@alice has nothing compiled, so ...', '@alice:maestro-1'), 'Give it a first source: hwai face:compile alice --file <file>.')
+eq('choices hint: an unknown depends_on names the listing', choicesHint(422, '`depends_on` names no premise or decision (or choices option) in this conversation: x', '@alice:maestro-1'), 'Name premise keys, decision ids and choices ids already in the state (hwai state:items).')
 eq('choices hint: another 422 adds nothing', choicesHint(422, '`model` is required', '@alice:maestro-1'), undefined)
 eq('conversation hint: a new premise names the flag to add',
   conversationHint(new HwAPIError(422, "premise 'rates' is new: give its `description` (what it means, in plain words)")),
@@ -1925,7 +1925,7 @@ async function conversationsOverHttp() {
   })
   await new Promise((r) => srv.listen(0, r))
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'faces-check-'))
-  const env = {...process.env, HOME: home, HW_BASE_URL: `http://127.0.0.1:${srv.address().port}`, HW_API_KEY: 'sk-check'}
+  const env = {...process.env, HOME: home, HEADWATERS_BASE_URL: `http://127.0.0.1:${srv.address().port}`, HEADWATERS_API_KEY: 'sk-check'}
   const run = (args) => new Promise((r) => {
     const child = execFile(process.execPath, ['bin/run.js', ...args], {env}, (err, stdout, stderr) => r({code: err?.code ?? 0, out: stdout + stderr}))
     child.stdin.end()
@@ -1939,7 +1939,7 @@ async function conversationsOverHttp() {
     let r = await run(['state:append', '--state-id', 'fs_1', '--premise', 'a=1'])
     eq('state:append is gone: state:add --jsonl and state:edit --note cover it', [r.code !== 0, /not found/i.test(r.out)], [true, true])
     // state:items and state:close use the directory's state, like every state: command
-    const sdir = fs.mkdtempSync(path.join(os.tmpdir(), 'hw-state-'))
+    const sdir = fs.mkdtempSync(path.join(os.tmpdir(), 'hwai-state-'))
     r = await runIn(sdir, ['state:items'])
     eq('state:items: no state here is refused before sending', [r.code !== 0, /No state here/.test(r.out)], [true, true])
     fs.mkdirSync(path.join(sdir, '.headwaters'))
@@ -1947,8 +1947,8 @@ async function conversationsOverHttp() {
     seen.length = 0
     r = await runIn(sdir, ['state:compact', 'alice'])
     eq('state:compact is gone: a causal state is queried with state:get', [r.code !== 0, /not found/i.test(r.out), seen.length], [true, true, 0])
-    r = await runIn(sdir, ['state:close', '--yes', '--json'], {HW_STATE_ID: 'fs_1'})
-    eq('state:close: HW_STATE_ID over the directory, and the server\'s answer', JSON.parse(r.stdout).deleted, true)
+    r = await runIn(sdir, ['state:close', '--yes', '--json'], {HEADWATERS_STATE_ID: 'fs_1'})
+    eq('state:close: HEADWATERS_STATE_ID over the directory, and the server\'s answer', JSON.parse(r.stdout).deleted, true)
     r = await runIn(sdir, ['state:close', '--state-id', 'fs_1', '--yes', '--json'])
     eq('state:close --state-id', JSON.parse(r.stdout).deleted, true)
     fs.rmSync(sdir, {recursive: true, force: true})
@@ -2015,7 +2015,7 @@ async function conversationsOverHttp() {
     r = await run(['maestro:choices', '--face', 'alice', '--state', 'x', '--model', 'maestro-1-fast'])
     eq('maestro:choices: --model is gone', [r.code !== 0, seen.length], [true, 0])
     r = await run(['maestro:choices', '--face', '@bare', '--state', 'x', '-q', 'y'])
-    eq('maestro:choices: 409 names the upload', /HTTP 409[\s\S]*hw face:compile bare --file/.test(r.out), true)
+    eq('maestro:choices: 409 names the upload', /HTTP 409[\s\S]*hwai face:compile bare --file/.test(r.out), true)
 
     r = await run(['maestro:decide', '--face', 'alice', '--state', 'Lease.', '--question', 'Move?'])
     eq('maestro:decide: the decoder defaults to jev-latest', last('/v1/systemone').model, '@alice:maestro-1/jev-latest')
@@ -2054,7 +2054,7 @@ async function conversationsOverHttp() {
     eq('state:create: a face argument is refused', r.code !== 0, true)
     const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'faces-state-'))
     r = await runIn(dir2, ['state:create'])
-    eq('state:create without --use: the id and how to use it, no file written', [r.code, /^Created an empty state, fs_1\. hw state:use fs_1/.test(r.out),
+    eq('state:create without --use: the id and how to use it, no file written', [r.code, /^Created an empty state, fs_1\. hwai state:use fs_1/.test(r.out),
       fs.existsSync(path.join(dir2, '.headwaters'))], [0, true, false])
     // in --jsonl, `on` is a JSON array or a comma list (read as --on reads it)
     const jl = path.join(dir, 'p.jsonl')
@@ -2069,7 +2069,7 @@ async function conversationsOverHttp() {
     eq('state:add --jsonl: a bad on list is refused before sending, naming the line', [r.code !== 0, /line 1/.test(r.out), seen.length], [true, true, 0])
     fs.mkdirSync(path.join(dir, 'sub'))
     r = await runIn(path.join(dir, 'sub'), ['state:add', 'the dinner', 'Dinner for six', '--role', 'goal', '--said', 'Plan a dinner.',
-      '--and', 'g', '--on', 'a,"b, c"', '--as', 'lead'], {HW_SESSION: 'check:1'})
+      '--and', 'g', '--on', 'a,"b, c"', '--as', 'lead'], {HEADWATERS_SESSION: 'check:1'})
     eq('premise:add: the body, the session header, the text verbatim', [last('/v1/states/fs_1/premises'), seen.at(-1).session, r.stdout],
       [{key: 'the dinner', value: 'Dinner for six', and: 'g', on: ['a', 'b, c'], role: 'goal', said: 'Plan a dinner.', as: 'lead'}, 'check:1',
         'did POST premises on fs_1\n\nOpen. Proved when 1 is refined.\n'])
@@ -2272,8 +2272,8 @@ async function compileWaitTimeout() {
     })
   })
   await new Promise((r) => srv.listen(0, '127.0.0.1', r))
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hw-check-'))
-  const env = {...process.env, HOME: home, HW_BASE_URL: `http://127.0.0.1:${srv.address().port}`, HW_API_KEY: 'sk-check'}
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hwai-check-'))
+  const env = {...process.env, HOME: home, HEADWATERS_BASE_URL: `http://127.0.0.1:${srv.address().port}`, HEADWATERS_API_KEY: 'sk-check'}
   const run = (args) => new Promise((r) => {
     const child = execFile(process.execPath, ['bin/run.js', ...args], {env}, (err, stdout, stderr) => r({code: err?.code ?? 0, out: stdout + stderr}))
     child.stdin.end()
@@ -2286,12 +2286,12 @@ async function compileWaitTimeout() {
     let r = await run(['face:compile', 'ada', '--file', file, '--medium', 'essay', '--timeout', '1'])
     eq('face:compile doc: a timed-out wait exits non-zero', r.code !== 0, true)
     eq('face:compile doc: it says the compile is still queued and how to check',
-      [/still queued on the server and goes on without this command/.test(r.out), /hw face:doc:get doc_1/.test(r.out), /\nDone\./.test(r.out)], [true, true, false])
+      [/still queued on the server and goes on without this command/.test(r.out), /hwai face:doc:get doc_1/.test(r.out), /\nDone\./.test(r.out)], [true, true, false])
     r = await run(['face:compile', 'ada', '--file', file, '--medium', 'essay', '--timeout', '1', '--json'])
     eq('face:compile doc --json: non-zero, and the reason is in the result', [r.code !== 0, /still queued/.test(r.out)], [true, true])
     r = await run(['face:compile', 'ada', '--file', talk, '--kind', 'thread', '--face-speaker', 'Ada', '--timeout', '1'])
     eq('face:compile thread: a timed-out wait exits non-zero and names the thread',
-      [r.code !== 0, /still queued on the server/.test(r.out.replace(/\s*\n\s*›\s*/g, ' ')), /hw face:thread:get thr_1/.test(r.out.replace(/\s*\n\s*›\s*/g, ' '))], [true, true, true])
+      [r.code !== 0, /still queued on the server/.test(r.out.replace(/\s*\n\s*›\s*/g, ' ')), /hwai face:thread:get thr_1/.test(r.out.replace(/\s*\n\s*›\s*/g, ' '))], [true, true, true])
   } finally {
     srv.close()
     fs.rmSync(home, {recursive: true, force: true})
@@ -2300,12 +2300,12 @@ async function compileWaitTimeout() {
 await compileWaitTimeout()
 
 // --- the clean start: no faces command name, no FACES_ variable, tool:verb -----
-// hw replaces the faces CLI with no aliases, so an old name anywhere a person or an
+// hwai replaces the faces CLI and the hw name with no aliases, so an old name anywhere a person or an
 // agent reads it is a bug: in the source, the README, or any command's help.
 async function cleanStart() {
-  const OLD_COMMAND = /\bfaces\s+(?:[a-z][a-z-]*:[a-z]|choices\b|decide\b|auth\b|face\b)/
-  const OLD_VAR = /\bFACES_[A-Z_]+/
-  const OLD_PLACES = /~\/\.faces\b|['"`]\.faces['"`]|\.faces\/state|@faces-sh\/|github\.com\/faces-sh\//
+  const OLD_COMMAND = /\b(?:faces|hw)\s+(?:[a-z][a-z-]*:[a-z]|choices\b|decide\b|auth\b|face\b)/
+  const OLD_VAR = /\b(?:FACES|HW)_[A-Z_]+/
+  const OLD_PLACES = /~\/\.faces\b|['"`]\.faces['"`]|\.faces\/state|@faces-sh\/|github\.com\/faces-sh\/|@headwaters-ai\/cli/
   const OLD_TOPICS = ['compile', 'chat', 'premise', 'conversation', 'session', 'style', 'fidelity', 'benchmark', 'auth', 'billing', 'keys']
   const files = ['README.md', 'package.json']
   const walk = (d) => { for (const e of fs.readdirSync(d, {withFileTypes: true})) { const f = path.join(d, e.name); if (e.isDirectory()) walk(f); else if (f.endsWith('.ts')) files.push(f) } }
@@ -2319,7 +2319,7 @@ async function cleanStart() {
   eq('clean start: no faces command, FACES_ variable or ~/.faces in the source or README', hits, [])
 
   const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'))
-  eq('clean start: the package and its binary', [pkg.name, Object.keys(pkg.bin), pkg.oclif.bin, pkg.oclif.dirname], ['@headwaters-ai/cli', ['hw'], 'hw', 'headwaters'])
+  eq('clean start: the package and its binary', [pkg.name, Object.keys(pkg.bin), pkg.oclif.bin, pkg.oclif.dirname], ['hwai', ['hwai'], 'hwai', 'headwaters'])
   eq('clean start: no old topic', Object.keys(pkg.oclif.topics).filter((t) => OLD_TOPICS.includes(t.split(':')[0])), [])
 
   const {Config} = await import('@oclif/core')
@@ -2343,7 +2343,7 @@ async function cleanStart() {
   }
   eq('clean start: no command\'s help names a faces command, a FACES_ variable or ~/.faces', helpHits, [])
   const envs = config.commands.flatMap((c) => Object.values(c.flags ?? {}).map((f) => f.env).filter(Boolean))
-  eq('clean start: the env vars are HW_', [...new Set(envs)].filter((e) => !e.startsWith('HW_')), [])
+  eq('clean start: the env vars are HEADWATERS_', [...new Set(envs)].filter((e) => !e.startsWith('HEADWATERS_')), [])
 }
 await cleanStart()
 
@@ -2368,13 +2368,13 @@ await cleanStart()
   eq('hud: three lines, fixed layout', hudLines(proof, id), [
     'HUD · fs_5bDa… · 1 "the dinner is planned" · open · 1/7 proved',
     'next: try 1.2.1 pasta primavera (p 0.71) · waiting: human on 1.3, environment on 1.4 · held: 1.2 builder-A',
-    'drill: hw state:get "pasta primavera"',
+    'drill: hwai state:get "pasta primavera"',
   ])
   eq('hud: --as shows what you hold', hudLines(proof, id, 'builder-A')[1].endsWith('you hold: 1.2'), true)
   eq('hud: --as holding nothing', hudLines(proof, id, 'someone')[1].endsWith('you hold: nothing'), true)
   eq('hud: an empty state', hudLines({premises: []}, id)[0], 'HUD · fs_5bDa… · empty')
   const proved = {premises: [{number: '1', key: 'g', role: 'goal', truth: 'proved'}], summary: ['Proved.']}
-  eq('hud: proved, nothing next', hudLines(proved, id), ['HUD · fs_5bDa… · 1 "g" · proved · 1/1 proved', 'next: none, proved', 'drill: hw state:get "g"'])
+  eq('hud: proved, nothing next', hudLines(proved, id), ['HUD · fs_5bDa… · 1 "g" · proved · 1/1 proved', 'next: none, proved', 'drill: hwai state:get "g"'])
 
   // a messy state, shaped like a real one (fs_5bD…): 9 roots listed out of number order, stray
   // open leaves, refuted roots, a proved root, and the working goal (7) written last, an AND
@@ -2392,9 +2392,9 @@ await cleanStart()
       {number: '26', key: 'Consistency Check', truth: 'refuted', children: []},
       {number: '30', key: 'premise:refine asks F2', truth: 'proved', children: []},
       {number: '5', key: 'a strong agent solves Terminal-Bench', role: 'goal', truth: 'open', children: []},
-      {number: '7', key: 'strong agents with hw solve Terminal-Bench 4.0 fully, for less compute', role: 'goal', op: 'and', truth: 'open',
-        children: ['the hw CLI is built', 'the Maestro skill is written', 'the docs describe Maestro', 'each task costs less']},
-      {number: '7.1', key: 'the hw CLI is built', truth: 'proved', op: 'and', children: ['a test: offline checks pass']},
+      {number: '7', key: 'strong agents with hwai solve Terminal-Bench 4.0 fully, for less compute', role: 'goal', op: 'and', truth: 'open',
+        children: ['the hwai CLI is built', 'the Maestro skill is written', 'the docs describe Maestro', 'each task costs less']},
+      {number: '7.1', key: 'the hwai CLI is built', truth: 'proved', op: 'and', children: ['a test: offline checks pass']},
       {number: '7.1.1', key: 'a test: offline checks pass', role: 'test', truth: 'proved'},
       {number: '7.2', key: 'the Maestro skill is written', truth: 'open', op: 'and', children: []},
       {number: '7.3', key: 'the docs describe Maestro', truth: 'open', op: 'and', children: [], await: 'human'},
@@ -2409,16 +2409,16 @@ await cleanStart()
     ],
   }
   eq('hud: a messy state: the working goal, its own status, count and next step', hudLines(messy, id), [
-    'HUD · fs_5bDa… · 7 "strong agents with hw solve Ter…" +8 other roots · open · 2/6 proved',
+    'HUD · fs_5bDa… · 7 "strong agents with hwai solve T…" +8 other roots · open · 2/6 proved',
     'next: refine 7.2 the Maestro skill is written · waiting: human on 7.3',
-    'drill: hw state:get "the Maestro skill is written"',
+    'drill: hwai state:get "the Maestro skill is written"',
   ])
   eq('hud: a refuted stray root does not make the goal refuted', hudLines(messy, id)[0].includes('refuted'), false)
   eq('hud: the default root is the open goal with children written last', chooseRoot(messy.premises).number, '7')
   eq('hud: a pinned goal', hudLines(messy, id, undefined, 'the backend renders the state'), [
     'HUD · fs_5bDa… · 2 "the backend renders the state" +8 other roots · open · 1/2 proved',
     'next: refine 2 the backend renders the state',
-    'drill: hw state:get "the backend renders the state"',
+    'drill: hwai state:get "the backend renders the state"',
   ])
   eq('hud: a pinned refuted root says so', hudLines(messy, id, undefined, 'the state is a live blueprint').slice(0, 2), [
     'HUD · fs_5bDa… · 21 "the state is a live blueprint" +8 other roots · refuted · 0/2 proved', 'next: none, refuted'])
@@ -2448,11 +2448,11 @@ await cleanStart()
     [{mode: 'off'}, {mode: 'on', goal: 'the menu'}, {mode: 'auto'}, 'auto\ngoal: g\n', 'off\n'])
 
   const bash = (command) => ({tool_name: 'Bash', tool_input: {command}})
-  eq('hud: state writes', ['add', 'edit', 'delete', 'refine', 'choices', 'decide', 'claim'].map((v) => isStateWrite(bash(`hw state:${v} "k"`))), [true, true, true, true, true, true, true])
-  eq('hud: reads and other calls are not writes', [isStateWrite(bash('hw state:get')), isStateWrite(bash('hw state:hud')), isStateWrite(bash('ls')),
-    isStateWrite({tool_name: 'Read', tool_input: {file_path: 'hw state:add'}}), isStateWrite({}), isStateWrite(bash('npx hw state:addx'))], [false, false, false, false, false, false])
-  eq('hud: a write inside a longer command', isStateWrite(bash('cd x && HW_SESSION=1 hw state:edit "k" --status verified')), true)
-  eq('hud: a command given as a list', isStateWrite({tool_name: 'Bash', tool_input: {command: ['hw', 'state:decide', 'k']}}), true)
+  eq('hud: state writes', ['add', 'edit', 'delete', 'refine', 'choices', 'decide', 'claim'].map((v) => isStateWrite(bash(`hwai state:${v} "k"`))), [true, true, true, true, true, true, true])
+  eq('hud: reads and other calls are not writes', [isStateWrite(bash('hwai state:get')), isStateWrite(bash('hwai state:hud')), isStateWrite(bash('ls')),
+    isStateWrite({tool_name: 'Read', tool_input: {file_path: 'hwai state:add'}}), isStateWrite({}), isStateWrite(bash('npx hwai state:addx')), isStateWrite(bash('hw state:add "k"'))], [false, false, false, false, false, false, false])
+  eq('hud: a write inside a longer command', isStateWrite(bash('cd x && HEADWATERS_SESSION=1 hwai state:edit "k" --status verified')), true)
+  eq('hud: a command given as a list', isStateWrite({tool_name: 'Bash', tool_input: {command: ['hwai', 'state:decide', 'k']}}), true)
 
   let counts = {}
   const fired = []
@@ -2489,7 +2489,7 @@ await cleanStart()
   // a hook never fails the agent: no state, a bad flag, a state the server cannot reach all print nothing and exit 0
   const none = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-none-'))
   const hook = (args, input, env = {}) => spawnSync(process.execPath, [path.resolve('bin/run.js'), 'state:hud', ...args],
-    {cwd: none, input, encoding: 'utf8', env: {...process.env, HW_STATE_ID: '', ...env}, timeout: 15000})
+    {cwd: none, input, encoding: 'utf8', env: {...process.env, HEADWATERS_STATE_ID: '', ...env}, timeout: 15000})
   const ev = JSON.stringify({session_id: 's', cwd: none, hook_event_name: 'UserPromptSubmit', prompt: 'hi'})
   for (const h of ['user-prompt', 'post-tool', 'statusline', 'stop', 'session-end']) {
     const r = hook(['--hook', h], ev)
@@ -2497,7 +2497,7 @@ await cleanStart()
   }
   const bad = hook(['--hook', 'nonsense'], ev)
   eq('hud: a bad hook name exits 0', [bad.status, bad.stdout], [0, ''])
-  const down = hook(['--hook', 'user-prompt', '--state-id', 'fs_x'], ev, {HW_BASE_URL: 'http://127.0.0.1:9', HW_API_KEY: 'k'})
+  const down = hook(['--hook', 'user-prompt', '--state-id', 'fs_x'], ev, {HEADWATERS_BASE_URL: 'http://127.0.0.1:9', HEADWATERS_API_KEY: 'k'})
   eq('hud: a server it cannot reach prints nothing, exit 0', [down.status, down.stdout], [0, ''])
   const start = hook(['--hook', 'session-start'], ev)
   eq('hud: session start with no state says how to make one', JSON.parse(start.stdout).hookSpecificOutput.additionalContext.startsWith('No state in this directory'), true)

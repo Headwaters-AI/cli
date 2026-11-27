@@ -54,7 +54,7 @@ export default class FaceAvatarGet extends BaseCommand {
       if (err instanceof HwAPIError) {
         if (err.statusCode === 404) {
           this.error(
-            `No avatar for '${args.face_id}'. See what it has with: hw face:avatar:list ${args.face_id}`,
+            `No avatar for '${args.face_id}'. See what it has with: hwai face:avatar:list ${args.face_id}`,
           )
         }
         this.error(`HTTP ${err.statusCode}: ${err.message}`)
@@ -112,7 +112,7 @@ export default class FaceAvatarGet extends BaseCommand {
       )
       if (report.stale === true) {
         this.log('  This image no longer matches the face as it is compiled now.')
-        this.log(`  A current one has to be generated, which bills: hw face:avatar:make ${args.face_id} --allow-paid`)
+        this.log(`  A current one has to be generated, which bills: hwai face:avatar:make ${args.face_id} --allow-paid`)
       }
     }
 

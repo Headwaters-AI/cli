@@ -116,7 +116,7 @@ export function decisionModelError(llm?: string): string | undefined {
   if (!llm) return undefined
   const want = llm.toLowerCase()
   if (!(DECISION_MODELS as readonly string[]).includes(want)) return undefined
-  return `${llm} is a decision model, not a chat model; use \`hw maestro:decide --face @<face> --decoder ${llm}\``
+  return `${llm} is a decision model, not a chat model; use \`hwai maestro:decide --face @<face> --decoder ${llm}\``
 }
 
 /**

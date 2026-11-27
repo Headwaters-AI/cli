@@ -17,7 +17,7 @@ export default class MaestroChat extends ChatCommand {
     'chosen for each request. --thread <name> keeps a multi-turn chat on this machine ' +
     '(~/.headwaters/threads/<name>.json): the first call starts it with --face and --decoder, later calls go on ' +
     'with it and send the whole thread. The steering is billed per input token plus a small fee per call ' +
-    '(hw models:list --kind upstream), and the decoder at its listed price.'
+    '(hwai models:list --kind upstream), and the decoder at its listed price.'
 
   static examples = [
     '<%= config.bin %> <%= command.id %> --face @socrates --decoder gpt-5.4 -m "What is virtue?"',
@@ -85,7 +85,7 @@ export default class MaestroChat extends ChatCommand {
       }
       if (flags.system) this.warn('--system is ignored when going on with a thread.')
     } else {
-      if (!flags.face) this.error(`No thread "${name}" yet. Start it with --face and --decoder, e.g. hw maestro:chat --thread ${name} --face @alice --decoder gpt-5.4 -m "..."`)
+      if (!flags.face) this.error(`No thread "${name}" yet. Start it with --face and --decoder, e.g. hwai maestro:chat --thread ${name} --face @alice --decoder gpt-5.4 -m "..."`)
       const named = maestroModel(flags.face, {fast: flags.fast, decoder: flags.decoder, needsDecoder: true})
       if (named.problem || !named.model) this.error(named.problem ?? 'Name the face.')
       const now = new Date().toISOString()

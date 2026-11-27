@@ -6,7 +6,7 @@
  * answer (`gpt-5.4`, `jev-latest`). The `/` reads like a fraction, the
  * upstream model over the downstream one:
  *
- *   @alice:maestro-1/choices            hw maestro:choices (our model answers)
+ *   @alice:maestro-1/choices            hwai maestro:choices (our model answers)
  *   @alice:maestro-1/gpt-5.4            chat, decide (a downstream model answers)
  *   @dana~alice:maestro-1/gpt-5.4       another account's face
  *   (@alice | @bob):maestro-1-fast      a composite

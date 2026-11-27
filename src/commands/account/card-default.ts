@@ -13,7 +13,7 @@ export default class BillingCardDefault extends BaseCommand {
   }
 
   static args = {
-    card_id: Args.string({description: 'Card id (pm_...), from hw account:cards', required: true}),
+    card_id: Args.string({description: 'Card id (pm_...), from hwai account:cards', required: true}),
   }
 
   async run(): Promise<unknown> {
@@ -25,7 +25,7 @@ export default class BillingCardDefault extends BaseCommand {
       data = await client.post(`/v1/billing/payment-methods/${seg(args.card_id)}/default`, {requireJwt: true})
     } catch (err) {
       if (err instanceof HwAPIError) {
-        if (err.statusCode === 404) this.error(`HTTP 404: ${err.message}\nList your cards with: hw account:cards`)
+        if (err.statusCode === 404) this.error(`HTTP 404: ${err.message}\nList your cards with: hwai account:cards`)
         this.error(`HTTP ${err.statusCode}: ${err.message}`)
       }
       throw err

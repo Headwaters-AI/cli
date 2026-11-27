@@ -26,7 +26,7 @@ export default class BillingCards extends BaseCommand {
     if (!this.jsonEnabled()) {
       const cards = data.payment_methods ?? []
       if (cards.length === 0) {
-        this.log('No saved cards. Add one with: hw account:card-add')
+        this.log('No saved cards. Add one with: hwai account:card-add')
       } else {
         for (const c of cards) this.log(cardLine(c))
       }

@@ -35,7 +35,7 @@ export default class BillingCardSetup extends BaseCommand {
         this.log(`  ${data.checkout_url}`)
         this.log('')
         // It reaches the account through Stripe's webhook, not this call.
-        this.log('It appears a few seconds after you finish. Check with: hw account:cards')
+        this.log('It appears a few seconds after you finish. Check with: hwai account:cards')
       } else {
         this.printHuman(data)
       }

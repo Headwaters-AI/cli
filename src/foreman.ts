@@ -3,9 +3,9 @@
  * proof read, and the commands that call a model through /v1/choices and /v1/decisions. The CLI
  * prints the server's `text` as it is; the proof's view is the server's alone.
  *
- * Which state: --state-id, else HW_STATE_ID, else the nearest `.headwaters/state.local` or
- * `.headwaters/state` from this directory up (state.local wins in the same directory). `hw
- * state:create --use` and `hw state:use <id>` write `.headwaters/state` here.
+ * Which state: --state-id, else HEADWATERS_STATE_ID, else the nearest `.headwaters/state.local` or
+ * `.headwaters/state` from this directory up (state.local wins in the same directory). `hwai
+ * state:create --use` and `hwai state:use <id>` write `.headwaters/state` here.
  */
 import fs from 'node:fs'
 import path from 'node:path'
@@ -59,8 +59,8 @@ export {premiseValue}
 
 export const stateIdFlag = {
   'state-id': Flags.string({
-    description: 'The state (fs_...). Default: HW_STATE_ID, else .headwaters/state.local or .headwaters/state here or above.',
-    env: 'HW_STATE_ID',
+    description: 'The state (fs_...). Default: HEADWATERS_STATE_ID, else .headwaters/state.local or .headwaters/state here or above.',
+    env: 'HEADWATERS_STATE_ID',
   }),
 }
 
@@ -73,8 +73,8 @@ export abstract class ReplyCommand extends BaseCommand {
   protected stateId(flags: {'state-id'?: string}, positional?: string): string {
     const id = positional || flags['state-id'] || findStateFile()?.id
     if (!id) {
-      this.error('No state here: no --state-id, no HW_STATE_ID and no .headwaters/state in this directory or above. ' +
-        'hw state:create --use makes one; hw state:use <id> uses one of yours.')
+      this.error('No state here: no --state-id, no HEADWATERS_STATE_ID and no .headwaters/state in this directory or above. ' +
+        'hwai state:create --use makes one; hwai state:use <id> uses one of yours.')
     }
     return id
   }
@@ -132,7 +132,7 @@ export function formatOf(flags: {problog?: boolean; dot?: boolean}, json: boolea
 
 /** --face: the face whose calls these are (billed per call). */
 export const faceFlag = {
-  face: Flags.string({description: 'The face that does it: @alias (hw face:list --for "<the task>" ranks them).', required: true}),
+  face: Flags.string({description: 'The face that does it: @alias (hwai face:list --for "<the task>" ranks them).', required: true}),
 }
 
 export function faceRef(face: string): string {

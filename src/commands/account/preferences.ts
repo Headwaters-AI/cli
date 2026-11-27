@@ -36,13 +36,13 @@ export default class AccountPreferences extends BaseCommand {
   }
 
   static examples = [
-    'hw account:preferences',
-    'hw account:preferences default_model gpt-5.4',
-    'hw account:preferences api_fallback true',
-    'hw account:preferences auto_style off',
-    'hw account:preferences auto_style default',
-    'hw account:preferences auto_style on --allow-paid',
-    'hw account:preferences auto_style_thresholds "email=25000,text message=default"',
+    'hwai account:preferences',
+    'hwai account:preferences default_model gpt-5.4',
+    'hwai account:preferences api_fallback true',
+    'hwai account:preferences auto_style off',
+    'hwai account:preferences auto_style default',
+    'hwai account:preferences auto_style on --allow-paid',
+    'hwai account:preferences auto_style_thresholds "email=25000,text message=default"',
   ]
 
   async run(): Promise<unknown> {
@@ -98,7 +98,7 @@ export default class AccountPreferences extends BaseCommand {
           // The server's sentence alone: the client's general guidance for this
           // code is about --oauth-only, which this command was not given.
           `HTTP 422: ${err.message.split('\n')[0]}\nOn the Free plan every request runs on credits, so api_fallback stays on. ` +
-            'It can be turned off on Connect or Pro: hw account:activate',
+            'It can be turned off on Connect or Pro: hwai account:activate',
         )
       }
       if (err instanceof HwAPIError) this.error(`HTTP ${err.statusCode}: ${err.message}`)
@@ -146,7 +146,7 @@ export default class AccountPreferences extends BaseCommand {
             ? `No ChatGPT account is linked, so on ${name} every automatic build is charged to credits.\n`
             : 'Could not check for a linked ChatGPT account, so automatic builds may be charged to credits.\n') +
         'Re-run with --allow-paid if you mean that. On Connect or Pro with ChatGPT linked they run at no charge: ' +
-        (paidPlan ? 'hw account:connect openai' : 'hw account:activate'),
+        (paidPlan ? 'hwai account:connect openai' : 'hwai account:activate'),
     )
   }
 

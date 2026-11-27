@@ -16,7 +16,7 @@ export default class BillingCardRemove extends BaseCommand {
   }
 
   static args = {
-    card_id: Args.string({description: 'Card id (pm_...), from hw account:cards', required: true}),
+    card_id: Args.string({description: 'Card id (pm_...), from hwai account:cards', required: true}),
   }
 
   async run(): Promise<unknown> {
@@ -30,12 +30,12 @@ export default class BillingCardRemove extends BaseCommand {
       data = await client.delete(`/v1/billing/payment-methods/${seg(args.card_id)}`, {requireJwt: true})
     } catch (err) {
       if (err instanceof HwAPIError) {
-        if (err.statusCode === 404) this.error(`HTTP 404: ${err.message}\nList your cards with: hw account:cards`)
+        if (err.statusCode === 404) this.error(`HTTP 404: ${err.message}\nList your cards with: hwai account:cards`)
         if (err.statusCode === 409) {
           this.error(
             `HTTP 409: ${err.message}\n` +
-              'Add another card first (hw account:card-add), or cancel the subscription ' +
-              '(hw account:cancel).',
+              'Add another card first (hwai account:card-add), or cancel the subscription ' +
+              '(hwai account:cancel).',
           )
         }
         this.error(`HTTP ${err.statusCode}: ${err.message}`)
@@ -43,7 +43,7 @@ export default class BillingCardRemove extends BaseCommand {
       throw err
     }
 
-    if (!this.jsonEnabled()) this.log(`Removed ${args.card_id}. See what is left with: hw account:cards`)
+    if (!this.jsonEnabled()) this.log(`Removed ${args.card_id}. See what is left with: hwai account:cards`)
     return data
   }
 }

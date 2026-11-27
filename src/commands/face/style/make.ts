@@ -52,7 +52,7 @@ export default class StyleMake extends BaseCommand {
     model: Flags.string({
       description:
         'The model the build runs on through your linked ChatGPT account. Leave it out for the default. ' +
-        'A named model is used only when it can run on ChatGPT (see hw models:list --chatgpt). ' +
+        'A named model is used only when it can run on ChatGPT (see hwai models:list --chatgpt). ' +
         'A build charged to credits always runs on the default build model, whatever is named here.',
     }),
     'allow-paid': Flags.boolean({
@@ -85,7 +85,7 @@ export default class StyleMake extends BaseCommand {
     if (!flags.all && (!flags.source || flags.source.length === 0)) {
       this.error(
         'Name what to build from: --source <id> (repeatable), or --all for everything ready.\n' +
-          `See what is available with: hw face:sources ${args.alias}`,
+          `See what is available with: hwai face:sources ${args.alias}`,
       )
     }
     if (flags.all && flags.source?.length) {
@@ -129,7 +129,7 @@ export default class StyleMake extends BaseCommand {
     if (flags['no-wait']) {
       if (json) return {...started, sources, skipped}
       this.log(`Build started: ${jobId}`)
-      this.log(`Read it with: hw face:style:status ${jobId}`)
+      this.log(`Read it with: hwai face:style:status ${jobId}`)
       return started!
     }
 
@@ -141,7 +141,7 @@ export default class StyleMake extends BaseCommand {
     this.log('')
     // A built style is applied on chat, chosen for each request by its medium.
     this.log(`'${args.alias}' has built a style. Chat with the face uses it when a request is in that medium.`)
-    this.log(`Go back to the previous style: hw face:style:revert ${args.alias} --yes`)
+    this.log(`Go back to the previous style: hwai face:style:revert ${args.alias} --yes`)
     return final
   }
 
@@ -176,7 +176,7 @@ export default class StyleMake extends BaseCommand {
     if (flags.all) {
       if (available.length === 0) {
         this.error(
-          `'${alias}' has no sources to build from. Add some with hw face:compile or hw face:style:upload.`,
+          `'${alias}' has no sources to build from. Add some with hwai face:compile or hwai face:style:upload.`,
         )
       }
       chosen = []
@@ -211,7 +211,7 @@ export default class StyleMake extends BaseCommand {
         this.error(
           `Nothing on '${alias}' is ready to build from.\n` +
             (flags.compile
-              ? 'Add material with hw face:style:upload or hw face:compile, then try again.'
+              ? 'Add material with hwai face:style:upload or hwai face:compile, then try again.'
               : '--no-compile only uses sources that are already compiled, and none are. Drop it to compile them as part of this build.'),
         )
       }
@@ -236,7 +236,7 @@ export default class StyleMake extends BaseCommand {
       if (missing.length > 0) {
         this.error(
           `Not a source on '${alias}': ${missing.join(', ')}\n` +
-            `List what is there with: hw face:sources ${alias}`,
+            `List what is there with: hwai face:sources ${alias}`,
         )
       }
     }
@@ -279,8 +279,8 @@ export default class StyleMake extends BaseCommand {
       // Both kinds can now record it permanently, through different commands.
       ways.push(
         first.sourceType === 'document'
-          ? `  hw face:doc:edit ${first.id} --medium email   records it permanently`
-          : `  hw face:thread:edit ${first.id} --medium email   records it permanently`,
+          ? `  hwai face:doc:edit ${first.id} --medium email   records it permanently`
+          : `  hwai face:thread:edit ${first.id} --medium email   records it permanently`,
       )
       this.error(
         `These sources do not say what sort of writing they are, and a style build will not guess:\n${list}\n\n` +
@@ -323,7 +323,7 @@ export default class StyleMake extends BaseCommand {
         `'${model}' cannot run on ChatGPT, so this build would run on the default build model and be charged to credits.\n` +
           'Leave out --model to build on your linked ChatGPT account at no charge, ' +
           'or re-run with --allow-paid if you mean to pay.\n' +
-          'If you are here because a build failed on authentication, reconnect instead: hw account:connect openai',
+          'If you are here because a build failed on authentication, reconnect instead: hwai account:connect openai',
       )
     }
 
@@ -332,7 +332,7 @@ export default class StyleMake extends BaseCommand {
     if ((await chatgptLinked(client)) === false) {
       this.error(
         'No ChatGPT account is linked, so this build has nothing to run on without being charged.\n' +
-          'Link one with: hw account:connect openai (Connect or Pro), ' +
+          'Link one with: hwai account:connect openai (Connect or Pro), ' +
           'or re-run with --allow-paid to pay from credits. Nothing was started.',
       )
     }
@@ -349,8 +349,8 @@ export default class StyleMake extends BaseCommand {
       this.error(
         `${err.message}\n` +
           (running
-            ? `Follow that one instead: hw face:style:status ${running} --wait`
-            : 'Find it with: hw face:style:status --face <alias>') +
+            ? `Follow that one instead: hwai face:style:status ${running} --wait`
+            : 'Find it with: hwai face:style:status --face <alias>') +
           '\nNothing was started, and nothing was charged.',
       )
     }
@@ -363,7 +363,7 @@ export default class StyleMake extends BaseCommand {
         `HTTP 422: ${err.message.split('\n')[0]}\n` +
           'On the Free plan a style build is charged to credits. Re-run with --allow-paid to pay, ' +
           'or subscribe to Connect or Pro and link ChatGPT, where a build runs at no charge: ' +
-          'hw account:activate\nNothing was started.',
+          'hwai account:activate\nNothing was started.',
       )
     }
     // Without --allow-paid a build runs only on the linked ChatGPT account,
@@ -371,7 +371,7 @@ export default class StyleMake extends BaseCommand {
     if (err.errorCode === 'chatgpt_not_linked') {
       this.error(
         'This build cannot run on a linked ChatGPT account: none is linked, or the named --model cannot run there.\n' +
-          'Link ChatGPT with: hw account:connect openai (Connect or Pro), ' +
+          'Link ChatGPT with: hwai account:connect openai (Connect or Pro), ' +
           'or re-run with --allow-paid to pay from credits.\nNothing was started, and nothing was charged.',
       )
     }
@@ -382,7 +382,7 @@ export default class StyleMake extends BaseCommand {
     // Every one of these lands before the job exists, so nothing has started.
     const hint: Record<number, string> = {
       403: 'That source belongs to another account.',
-      404: 'Check the id against: hw face:sources <alias>',
+      404: 'Check the id against: hwai face:sources <alias>',
       409: 'A source is compiling right now, or the face is locked. Wait for it to finish, or unlock the face.',
       422: 'A named thread has messages that are not compiled yet. Compile it first, or pass --no-compile.',
     }

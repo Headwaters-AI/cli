@@ -52,7 +52,7 @@ export default class GroupAdd extends BaseCommand {
           if (err.statusCode === 404) {
             this.error(
               `No face '${alias}'. If it belongs to another account, name it as owner:alias. ` +
-                'Find it with: hw face:list --public',
+                'Find it with: hwai face:list --public',
             )
           }
           this.error(`Could not resolve '${alias}' (HTTP ${err.statusCode}): ${err.message}`)

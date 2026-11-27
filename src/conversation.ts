@@ -82,7 +82,7 @@ export interface PremiseState {
   depends_on?: DependsOnEntry[]
   /** `wanted` when it is a goal, `test` when it is a check. */
   role?: string
-  /** The face that proposed it (an option written into the state by hw state:choices). */
+  /** The face that proposed it (an option written into the state by hwai state:choices). */
   face?: string
   /** Why the server set its status: an option pruned by a weighing decision. */
   reason?: string
@@ -101,7 +101,7 @@ export interface StatusChange {
 }
 
 export const CONVERSATION_FLAG_DESCRIPTION =
-  'Add this turn to a state, by id (from hw state:create). Send only what is new: ' +
+  'Add this turn to a state, by id (from hwai state:create). Send only what is new: ' +
   'the state so far is read before it. A state opened with one face takes only that face.'
 
 export const PREMISE_FLAG_DESCRIPTION =
@@ -125,7 +125,7 @@ export const PREMISE_STATUS_FLAG_DESCRIPTION =
 
 export const PREMISE_DEPENDS_ON_FLAG_DESCRIPTION =
   'What a --premise rests on, as key=a,b (repeatable, one per key): premise keys, decision ids and option ids ' +
-  '(opt_..., or cho_... for all of a choices list, from hw state:choices) already in ' +
+  '(opt_..., or cho_... for all of a choices list, from hwai state:choices) already in ' +
   `the state or set in the same request, at most ${MAX_DEPENDS_ON}, comma separated (a key that holds a comma ` +
   'goes in double quotes: key=\'"x, y",b\'). key rests on each: each must hold for it to hold. Weigh an entry ' +
   'with :and or :or, then a weight from 0 to 1, then @ and the decision that set it: ' +
@@ -187,7 +187,7 @@ export function conversationLines(c: Conversation): string[] {
 export function conversationHint(err: HwAPIError): string | undefined {
   if (err.statusCode === 404) {
     return 'A state expires 30 days after it was last used, and a closed one cannot be used. ' +
-      'Start another with: hw state:create'
+      'Start another with: hwai state:create'
   }
   const fresh = err.statusCode === 422 ? /premise ('(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*") is new/.exec(err.message) : null
   if (fresh) {
@@ -196,7 +196,7 @@ export function conversationHint(err: HwAPIError): string | undefined {
     return `Say what it means: --premise-description ${shellWord(`${keyArg(key)}=what it means, in plain words`)}`
   }
   if (err.statusCode === 422 && /depends_on` names no premise or decision/.test(err.message)) {
-    return 'Name premise keys, decision ids and option ids already in the state (hw state:items), or premises set in the same request.'
+    return 'Name premise keys, decision ids and option ids already in the state (hwai state:items), or premises set in the same request.'
   }
   return undefined
 }
@@ -499,7 +499,7 @@ export function conversationFields(flags: {
     flags['premise-role'], flags['premise-origin'])
   const inConversation = Boolean(flags.conversation || flags.session)
   if (!inConversation && (premises.length > 0 || flags['causes-visible'] !== undefined)) {
-    throw new Error('Premises and --causes-visible belong to a state: add --conversation <id> (from hw state:create).')
+    throw new Error('Premises and --causes-visible belong to a state: add --conversation <id> (from hwai state:create).')
   }
   if (flags.conversation) out.conversation = flags.conversation
   if (premises.length > 0) out.premises = premises

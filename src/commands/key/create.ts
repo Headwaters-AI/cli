@@ -62,9 +62,9 @@ export default class KeysCreate extends BaseCommand {
 
     this.printHuman(data)
     this.log('')
-    this.log('⚠  The full key is shown only once. `hw key:list` returns it truncated by design.')
+    this.log('⚠  The full key is shown only once. `hwai key:list` returns it truncated by design.')
     if (saved) {
-      this.log('✓  Saved to ~/.headwaters/config.json as api_key. hw commands will use it automatically.')
+      this.log('✓  Saved to ~/.headwaters/config.json as api_key. hwai commands will use it automatically.')
     } else if (!flags.save) {
       this.log('   Not saved (--no-save). Copy the key above now.')
     } else {

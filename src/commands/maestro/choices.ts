@@ -13,7 +13,7 @@ export default class MaestroChoices extends BaseCommand {
     'strongest first. Leave --question out and it proposes the question it would ask. --face names the face ' +
     '(@alice, @owner~alice for one shared with you, or a composite such as "(@alice | @bob)"); it runs on ' +
     'maestro-1, or maestro-1-fast with --fast, which answers sooner and costs 10 times more. ' +
-    'In a state, use state:choices. Billed on the tokens it processes (see hw models:list --kind upstream). ' +
+    'In a state, use state:choices. Billed on the tokens it processes (see hwai models:list --kind upstream). ' +
     'Takes about 10 to 30 seconds.'
 
   static examples = [

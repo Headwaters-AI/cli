@@ -74,7 +74,7 @@ export default class AuthConnect extends BaseCommand {
         if (!this.jsonEnabled()) {
           const who = email ? ` as ${email}` : ''
           const tier = plan ? ` (${planLabel(plan)})` : ''
-          this.log(`Already connected to ChatGPT${who}${tier}. Run 'hw account:disconnect openai' to reconnect.`)
+          this.log(`Already connected to ChatGPT${who}${tier}. Run 'hwai account:disconnect openai' to reconnect.`)
         }
         return output
       }
@@ -129,7 +129,7 @@ export default class AuthConnect extends BaseCommand {
       const now = Date.now()
       if (now - startedAt > HARD_STOP_MS || (!Number.isNaN(expiresAt) && now >= expiresAt)) {
         process.removeListener('SIGINT', onSigint)
-        this.error('The code expired before it was approved. Run `hw account:connect openai` again to get a new code.')
+        this.error('The code expired before it was approved. Run `hwai account:connect openai` again to get a new code.')
       }
 
       await sleep(intervalMs)
@@ -173,7 +173,7 @@ export default class AuthConnect extends BaseCommand {
 
       if (poll.status === 'expired') {
         process.removeListener('SIGINT', onSigint)
-        this.error('The code expired or was not recognized. Run `hw account:connect openai` again to get a new code.')
+        this.error('The code expired or was not recognized. Run `hwai account:connect openai` again to get a new code.')
       }
 
       // pending: honor server-supplied retry_after, else fall back to interval.
@@ -211,20 +211,20 @@ export default class AuthConnect extends BaseCommand {
   private handleStartError(err: unknown): never {
     if (err instanceof HwAPIError) {
       if (err.statusCode === 401) {
-        this.error('Your Headwaters session is missing or expired. Run `hw account:login` and try again.')
+        this.error('Your Headwaters session is missing or expired. Run `hwai account:login` and try again.')
       }
 
       if (err.statusCode === 403 || err.errorCode === 'connect_plan_required') {
         this.error(
           'Connecting ChatGPT requires the Connect or Pro plan.\n' +
-          'Subscribe with: hw account:activate --plan connect',
+          'Subscribe with: hwai account:activate --plan connect',
         )
       }
 
       if (err.statusCode === 422 || err.errorCode === 'device_auth_not_enabled') {
         const steps = [
           "In ChatGPT's Security settings, turn on device code authorization",
-          'Then run `hw account:connect openai` again',
+          'Then run `hwai account:connect openai` again',
         ]
         this.error(
           'Device-code authorization is not enabled on your ChatGPT account yet:\n' +

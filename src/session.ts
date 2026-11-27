@@ -30,6 +30,6 @@ export function sessionLines(s: Session): string[] {
 
 /** What to add to a session refusal, or undefined when the server's message says it all. */
 export function sessionHint(err: HwAPIError): string | undefined {
-  if (err.statusCode === 404) return 'Sessions expire 30 days after their last turn, and a closed one cannot be used. Start another with: hw state:create <face>'
+  if (err.statusCode === 404) return 'Sessions expire 30 days after their last turn, and a closed one cannot be used. Start another with: hwai state:create <face>'
   return undefined
 }

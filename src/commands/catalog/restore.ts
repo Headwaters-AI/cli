@@ -70,12 +70,12 @@ export default class CatalogRestore extends BaseCommand {
     try {
       backup = JSON.parse(fs.readFileSync(filePath, 'utf8')) as BackupFile
     } catch {
-      this.error(`${filePath} is not a backup file: it is not valid JSON. Make one with: hw catalog:backup`)
+      this.error(`${filePath} is not a backup file: it is not valid JSON. Make one with: hwai catalog:backup`)
     }
 
     // "Unsupported backup version: undefined" said nothing about the file.
     if (!backup || typeof backup !== 'object' || !Array.isArray(backup.faces)) {
-      this.error(`${filePath} is not a backup of faces: it has no list of faces. Make one with: hw catalog:backup`)
+      this.error(`${filePath} is not a backup of faces: it has no list of faces. Make one with: hwai catalog:backup`)
     }
     if (!backup.groups && Array.isArray(backup.teams)) {
       backup.groups = backup.teams
@@ -141,7 +141,7 @@ export default class CatalogRestore extends BaseCommand {
         } catch (err) {
           const msg = err instanceof HwAPIError ? `${err.statusCode}: ${err.message}` : String(err)
           const why = doc.medium ? '' : ` (the backup records no medium for "${doc.label ?? 'untitled'}"; ` +
-            `create it with hw face:doc:create ${face.alias} --medium <medium>)`
+            `create it with hwai face:doc:create ${face.alias} --medium <medium>)`
           failures.push(`${face.alias}: document "${doc.label ?? 'untitled'}" (${msg})${why}`)
           if (!json) process.stderr.write(`\n    warn: doc upload failed: ${msg}${why}\n    `)
         }
@@ -254,7 +254,7 @@ export default class CatalogRestore extends BaseCommand {
       this.log(`  Threads uploaded: ${threadsUploaded}`)
       if (groupsCreated > 0) this.log(`  Groups created: ${groupsCreated}`)
       if (skippedCorpus.length > 0) {
-        this.log(`  Style corpus threads not restored: ${skippedCorpus.length}. Re-upload them with hw face:style:upload:`)
+        this.log(`  Style corpus threads not restored: ${skippedCorpus.length}. Re-upload them with hwai face:style:upload:`)
         for (const s of skippedCorpus) this.log(`    ${s}`)
       }
     }

@@ -47,7 +47,7 @@ export const MODEL_ARG_DESCRIPTION =
   'The upstream model over the downstream model: @<face>:<maestro>/<model>, e.g. @alice:maestro-1/gpt-5.4. ' +
   'Another account\'s face is @owner~face; a composite is "(@a | @b):maestro-1/<model>" (operators | & - ^). ' +
   'maestro-1-fast steers sooner, at 10 times the steering price. The model after the / is any chat model ' +
-  'in hw models:list, written as it is listed.'
+  'in hwai models:list, written as it is listed.'
 
 /** The flags every chat command takes. */
 export function chatFlags() {

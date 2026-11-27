@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 /**
- * Helpers for `hw maestro:decide`, the client for POST /v1/systemone (Jev's System One format).
+ * Helpers for `hwai maestro:decide`, the client for POST /v1/systemone (Jev's System One format).
  *
  * Kept apart from the command so the parts that decide what a person is told
  * can be checked offline (scripts/check.mjs) without a face to ask.
@@ -27,7 +27,7 @@ export async function decisionModels(client: HwClient): Promise<string[]> {
   return [...DECISION_MODELS]
 }
 
-/** Which request shape `hw maestro:decide` sends: Jev's System One, or OpenAI's Decisions format. */
+/** Which request shape `hwai maestro:decide` sends: Jev's System One, or OpenAI's Decisions format. */
 export const DECISION_FORMATS = ['systemone', 'openai'] as const
 
 /**

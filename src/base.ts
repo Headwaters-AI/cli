@@ -11,15 +11,15 @@ export abstract class BaseCommand extends Command {
   static baseFlags = {
     'base-url': Flags.string({
       description: 'API base URL',
-      env: 'HW_BASE_URL',
+      env: 'HEADWATERS_BASE_URL',
     }),
     token: Flags.string({
       description: 'JWT bearer token',
-      env: 'HW_TOKEN',
+      env: 'HEADWATERS_TOKEN',
     }),
     'api-key': Flags.string({
       description: 'API key',
-      env: 'HW_API_KEY',
+      env: 'HEADWATERS_API_KEY',
     }),
     toon: Flags.boolean({
       description:

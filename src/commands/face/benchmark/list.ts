@@ -30,7 +30,7 @@ export default class BenchmarkList extends BaseCommand {
     if (this.jsonEnabled()) return data
     const runs = data.runs ?? []
     if (runs.length === 0) {
-      this.log(`No benchmark runs${flags.face ? ` on '${flags.face}'` : ''}. Price one with: hw face:benchmark:start <alias> --dry-run`)
+      this.log(`No benchmark runs${flags.face ? ` on '${flags.face}'` : ''}. Price one with: hwai face:benchmark:start <alias> --dry-run`)
       return data
     }
     const rows = runs.map((r) => [

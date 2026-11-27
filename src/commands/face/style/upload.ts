@@ -14,7 +14,7 @@ export default class StyleUpload extends BaseCommand {
     'for plaintextBody. The server lists every problem with a refused line, and the fields it accepts. ' +
     'Upload ONE medium per file: a file mixing, say, email and ' +
     'text messages produces threads with no medium at all, which no style can be built from. A message that declares ' +
-    'its own `kind` must spell one of the media in hw media:list exactly; an unknown one is refused, naming the ' +
+    'its own `kind` must spell one of the media in hwai media:list exactly; an unknown one is refused, naming the ' +
     'message that carried it. The file is passed through as written, so this is the server answering.'
 
   static examples = [
@@ -109,12 +109,12 @@ export default class StyleUpload extends BaseCommand {
     }
     this.log('')
     if (medium) {
-      this.log(`Build the style: hw face:style:make ${args.alias} --all`)
+      this.log(`Build the style: hwai face:style:make ${args.alias} --all`)
     } else {
       this.log('These threads have NO medium, so no style can be built from them until one is set.')
       this.log('That happens when one file mixes media, or when the messages declared none.')
-      this.log('Upload one medium per file, or set it: hw face:thread:edit <id> --medium <medium>')
-      this.log(`Inspect what landed: hw face:sources ${args.alias} --type thread`)
+      this.log('Upload one medium per file, or set it: hwai face:thread:edit <id> --medium <medium>')
+      this.log(`Inspect what landed: hwai face:sources ${args.alias} --type thread`)
     }
     return data
   }

@@ -39,7 +39,7 @@ export default class CompileDocGet extends BaseCommand {
       this.printHuman(data)
       const lines = freshnessLines(
         data as Record<string, never>,
-        `hw face:doc:make ${args.doc_id}`,
+        `hwai face:doc:make ${args.doc_id}`,
         args.doc_id,
       )
       if (lines.length > 0) {

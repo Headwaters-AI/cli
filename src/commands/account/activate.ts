@@ -69,14 +69,14 @@ export default class BillingSubscriptionActivate extends BaseCommand {
       if (plan === 'team') this.error('Your plan is managed by Headwaters, so there is nothing to subscribe to.')
       if (cancelAtPeriodEnd) {
         this.error(
-          `Your ${planName(plan)} plan is set to cancel. Keep it first with: hw account:activate\n` +
-            `Then, to change to ${planName(want)}: hw account:plan ${want}`,
+          `Your ${planName(plan)} plan is set to cancel. Keep it first with: hwai account:activate\n` +
+            `Then, to change to ${planName(want)}: hwai account:plan ${want}`,
         )
       }
 
       this.error(
         `You already subscribe to ${planName(plan)}. To change to ${planName(want)}, with proration:\n` +
-          `  hw account:plan ${want}`,
+          `  hwai account:plan ${want}`,
       )
     }
 
@@ -85,7 +85,7 @@ export default class BillingSubscriptionActivate extends BaseCommand {
       data = await client.post(`/v1/billing/checkout?plan=${want}&source=cli`, {requireJwt: true})
     } catch (err) {
       if (err instanceof HwAPIError) {
-        if (err.statusCode === 409) this.error(`HTTP 409: ${err.message}\nChange plan with: hw account:plan ${want}`)
+        if (err.statusCode === 409) this.error(`HTTP 409: ${err.message}\nChange plan with: hwai account:plan ${want}`)
         this.error(`HTTP ${err.statusCode}: ${err.message}`)
       }
       throw err
@@ -100,7 +100,7 @@ export default class BillingSubscriptionActivate extends BaseCommand {
       this.log('Complete payment at this link (it takes a promo code too):')
       this.log(`  ${url}`)
       this.log('')
-      this.log('After payment, check with: hw account:subscription')
+      this.log('After payment, check with: hwai account:subscription')
     }
 
     return {status: 'checkout_created', plan: want, checkout_url: url}

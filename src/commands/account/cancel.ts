@@ -53,7 +53,7 @@ export default class BillingSubscriptionCancel extends BaseCommand {
     const result = data as Record<string, unknown>
     if (!json) {
       this.log(`Canceled. ${name} access continues until ${result.current_period_end ?? 'period end'}.`)
-      this.log(`To reactivate before then: hw account:activate --plan ${plan}`)
+      this.log(`To reactivate before then: hwai account:activate --plan ${plan}`)
     }
 
     return {status: 'canceled', ...result}

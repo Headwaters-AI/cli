@@ -89,8 +89,8 @@ export default class FaceAvatarUpload extends BaseCommand {
       // worth saying here rather than leaving someone to wonder why nothing
       // changed.
       this.log('')
-      this.log(`Serve it with: hw face:avatar:get ${args.face_id} --prefer uploaded`)
-      this.log(`Remove it with: hw face:avatar:delete ${args.face_id}`)
+      this.log(`Serve it with: hwai face:avatar:get ${args.face_id} --prefer uploaded`)
+      this.log(`Remove it with: hwai face:avatar:delete ${args.face_id}`)
     }
 
     return data

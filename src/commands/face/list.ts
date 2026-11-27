@@ -102,7 +102,7 @@ export default class FaceList extends BaseCommand {
     for (const t of flags.group ?? []) {
       // A name or typo matched nothing and read as an empty catalog.
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(t)) {
-        this.error(`--group takes a group id (got "${t}"). Find ids with: hw group:list`)
+        this.error(`--group takes a group id (got "${t}"). Find ids with: hwai group:list`)
       }
     }
 

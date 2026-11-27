@@ -171,7 +171,7 @@ export default class FaceCompile extends BaseCommand {
         try {
           const poll = (await client.get(route)) as Record<string, unknown>
           if (poll.status !== 'transcribing') {
-            if (poll.status === 'failed') this.error(`Transcription failed. The source is kept: hw face:${thread ? 'thread' : 'doc'}:get ${id}`)
+            if (poll.status === 'failed') this.error(`Transcription failed. The source is kept: hwai face:${thread ? 'thread' : 'doc'}:get ${id}`)
             data = poll
             if (!json) process.stderr.write(`Transcription complete${thread ? `: ${poll.message_count ?? 0} messages` : ''}\n`)
             break

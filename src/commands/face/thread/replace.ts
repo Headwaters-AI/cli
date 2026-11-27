@@ -106,7 +106,7 @@ export default class CompileThreadReplace extends BaseCommand {
     const mine = parsed.messages.filter((m) => m.role === 'user').length
     this.log(`Replaced with ${parsed.messages.length} message(s) read as ${parsed.format}.`)
     this.log(`${mine} from the face, ${parsed.messages.length - mine} from others.`)
-    this.log(`Compile it: hw face:thread:make ${args.thread_id}`)
+    this.log(`Compile it: hwai face:thread:make ${args.thread_id}`)
     return data as Record<string, unknown>
   }
 }

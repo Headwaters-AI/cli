@@ -50,7 +50,7 @@ export default class StateHud extends ReplyCommand {
     '(with --as, yours); then the command that shows the detail. "on", "off" or "auto" sets when the hooks show it, ' +
     'in .headwaters/hud next to the state file, with the pinned goal (auto, the default: when the directory has a ' +
     'state). --hook <event> reads a hook event on stdin and prints that ' +
-    'hook\'s output (Claude Code and Codex): user-prompt each user message, post-tool after an hw state: write or ' +
+    'hook\'s output (Claude Code and Codex): user-prompt each user message, post-tool after an hwai state: write or ' +
     `every 15 tool calls, statusline one line for the status bar, and session-start, stop and session-end. A hook ` +
     'never blocks and never fails: on any error it prints nothing and exits 0. Free.'
 
@@ -67,7 +67,7 @@ export default class StateHud extends ReplyCommand {
   static flags = {
     ...BaseCommand.baseFlags,
     ...stateIdFlag,
-    as: Flags.string({description: 'Whose claims to show as "you hold": the name their writes carry as --as.', env: 'HW_AS'}),
+    as: Flags.string({description: 'Whose claims to show as "you hold": the name their writes carry as --as.', env: 'HEADWATERS_AS'}),
     goal: Flags.string({description: 'Pin the root goal the HUD is about (a premise key), kept in .headwaters/hud; "" unpins it.'}),
     hook: Flags.string({description: 'Run as a hook: read the hook event on stdin and print the hook\'s output.', options: [...HOOKS]}),
     harness: Flags.string({description: 'With --hook: the harness, which names the session (claude-code:<id> or codex:<id>).', options: ['claude-code', 'codex'], default: 'claude-code'}),
@@ -136,27 +136,27 @@ export default class StateHud extends ReplyCommand {
     const cwd = (typeof event.cwd === 'string' && event.cwd) || (typeof ws?.current_dir === 'string' && ws.current_dir) || process.cwd()
     const found = findStateFile(cwd)
     const id = flags['state-id'] || found?.id
-    const session = typeof event.session_id === 'string' && event.session_id ? `${flags.harness}:${event.session_id}` : process.env.HW_SESSION?.trim()
+    const session = typeof event.session_id === 'string' && event.session_id ? `${flags.harness}:${event.session_id}` : process.env.HEADWATERS_SESSION?.trim()
     const out = (s: string) => process.stdout.write(s + '\n')
 
     if (hook === 'session-start') {
-      // every hw write in the session then records it, and session-end releases its claims
+      // every hwai write in the session then records it, and session-end releases its claims
       const envFile = process.env.CLAUDE_ENV_FILE
-      if (session && envFile) fs.appendFileSync(envFile, `export HW_SESSION=${session}\n`)
+      if (session && envFile) fs.appendFileSync(envFile, `export HEADWATERS_SESSION=${session}\n`)
       if (!id) {
-        out(contextOutput('SessionStart', 'No state in this directory (no .headwaters/state). hw state:create --use creates one; hw state:use <id> uses one of yours.'))
+        out(contextOutput('SessionStart', 'No state in this directory (no .headwaters/state). hwai state:create --use creates one; hwai state:use <id> uses one of yours.'))
         return
       }
       const got = await within(this.makeClient(flags).stateReply('GET', this.statePath(id, '/proof')), NETWORK_MS)
       const text = typeof got.data.text === 'string' ? got.data.text : ''
-      out(contextOutput('SessionStart', got.ok && text ? `State ${id} (${found?.file ?? 'HW_STATE_ID'}):\n${text}` : `State ${id} could not be read: ${text.slice(0, 300) || `HTTP ${got.status}`}`))
+      out(contextOutput('SessionStart', got.ok && text ? `State ${id} (${found?.file ?? 'HEADWATERS_STATE_ID'}):\n${text}` : `State ${id} could not be read: ${text.slice(0, 300) || `HTTP ${got.status}`}`))
       return
     }
 
     if (!id) {
       // only "on" shows anything without a state, and only in the HUD's own slots
       if ((hook === 'user-prompt' || hook === 'post-tool' || hook === 'statusline') && readHud(cwd).mode === 'on') {
-        const none = 'HUD · no state here: hw state:create --use makes one'
+        const none = 'HUD · no state here: hwai state:create --use makes one'
         out(hook === 'statusline' ? none : contextOutput(hook === 'user-prompt' ? 'UserPromptSubmit' : 'PostToolUse', none))
       }
       return

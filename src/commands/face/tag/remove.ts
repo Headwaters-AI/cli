@@ -23,7 +23,7 @@ export default class FaceTagRemove extends BaseCommand {
     const {args, flags} = await this.parse(FaceTagRemove)
     const client = this.makeClient(flags)
     const tag = args.tag ?? flags.tag
-    if (!tag) this.error('Name the tag to remove: hw face:tag:remove <alias> <tag>, or --tag <tag>')
+    if (!tag) this.error('Name the tag to remove: hwai face:tag:remove <alias> <tag>, or --tag <tag>')
 
     let data: unknown
     try {
@@ -31,7 +31,7 @@ export default class FaceTagRemove extends BaseCommand {
     } catch (err) {
       if (err instanceof HwAPIError) {
         if (err.statusCode === 403) {
-          this.error(`Forbidden: face '${args.alias}' is not owned by the current account. Run \`hw catalog:doctor --fix\` to sync.`)
+          this.error(`Forbidden: face '${args.alias}' is not owned by the current account. Run \`hwai catalog:doctor --fix\` to sync.`)
         }
         this.error(`HTTP ${err.statusCode}: ${err.message}`)
       }

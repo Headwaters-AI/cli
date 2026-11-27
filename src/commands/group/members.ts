@@ -59,7 +59,7 @@ export default class GroupMembers extends BaseCommand {
     const members = ((data as {data?: Member[]}).data ?? (data as Member[])) ?? []
     if (members.length === 0) {
       this.log('This group has no members.')
-      this.log(`Add one with: hw group:add ${args.group_id} --face <alias>`)
+      this.log(`Add one with: hwai group:add ${args.group_id} --face <alias>`)
       return data
     }
 
@@ -90,7 +90,7 @@ export default class GroupMembers extends BaseCommand {
       // reporting exists to prevent.
       this.log(
         `${lost.length} can no longer be reached and will not answer. They are still listed because the ` +
-          'group has not changed; remove them with hw group:remove.',
+          'group has not changed; remove them with hwai group:remove.',
       )
     }
     return data

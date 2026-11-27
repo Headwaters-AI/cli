@@ -46,7 +46,7 @@ export default class FaceAvatarDelete extends BaseCommand {
       // The route answers the same whether there was a picture or not, so this
       // says what is true afterwards rather than claiming something was removed.
       this.log(`${args.face_id} has no uploaded picture now.`)
-      this.log(`It is served a generated avatar: hw face:avatar:get ${args.face_id}`)
+      this.log(`It is served a generated avatar: hwai face:avatar:get ${args.face_id}`)
     }
 
     return result

@@ -31,7 +31,7 @@ export default class BenchmarkGet extends BaseCommand {
         : ((await client.get(`${BENCHMARK_RUNS}/${seg(args.run_id)}`)) as BenchmarkRun)
     } catch (err) {
       if (err instanceof HwAPIError) {
-        if (err.statusCode === 404) this.error(`No benchmark run '${args.run_id}'. List yours with: hw face:benchmark:list`)
+        if (err.statusCode === 404) this.error(`No benchmark run '${args.run_id}'. List yours with: hwai face:benchmark:list`)
         this.error(benchmarkError(err))
       }
       throw err

@@ -64,7 +64,7 @@ export default class CompileDocMake extends BaseCommand {
     if (flags['no-wait']) {
       if (!json) {
         process.stderr.write(`Compilation started in background${queued ? ' (queued)' : ''}.\n`)
-        process.stderr.write(`Poll with: hw face:doc:get ${args.doc_id} --json\n`)
+        process.stderr.write(`Poll with: hwai face:doc:get ${args.doc_id} --json\n`)
       }
       return makeResponse
     }
@@ -72,7 +72,7 @@ export default class CompileDocMake extends BaseCommand {
     if (!json) {
       process.stderr.write(scheduled
         ? 'Waiting for the scheduled start; it starts on its own, so stopping here leaves it scheduled.\n' +
-          `To start it now instead: hw face:doc:make ${args.doc_id} --rush\n`
+          `To start it now instead: hwai face:doc:make ${args.doc_id} --rush\n`
         : `Compiling${queued ? ' (queued, and it starts on its own)' : ''}:\n`)
     }
 

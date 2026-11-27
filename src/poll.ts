@@ -60,7 +60,7 @@ export class CompileWaitTimeout extends Error {
 export function waitTimeoutMessage(err: CompileWaitTimeout, kind: 'doc' | 'thread', id: string): string {
   const where = err.lastStatus === 'queued' ? 'still queued' : 'still running'
   return `Stopped waiting after ${err.seconds}s: the compile is ${where} on the server and goes on without this command. ` +
-    `Check on it with: hw face:${kind}:get ${id} (or hw face:compile:status), or wait longer with --timeout.`
+    `Check on it with: hwai face:${kind}:get ${id} (or hwai face:compile:status), or wait longer with --timeout.`
 }
 
 /** One progress line for a person: "queued", or "compiling, 43%". */

@@ -213,7 +213,7 @@ export async function pollStyleJob(
   while (true) {
     if (Date.now() - start > timeout) {
       throw new Error(
-        `Timed out after ${Math.round(timeout / 1000)}s. The build may still finish; read it later with: hw face:style:status ${jobId}`,
+        `Timed out after ${Math.round(timeout / 1000)}s. The build may still finish; read it later with: hwai face:style:status ${jobId}`,
       )
     }
     await new Promise((r) => setTimeout(r, interval))
@@ -285,10 +285,10 @@ export function jobFailureMessage(error: unknown, linked?: boolean, errorCode?: 
     // telling someone who never linked an account that it expired sends them
     // looking for a link they do not have.
     const cause = linked === false
-      ? 'No ChatGPT account is linked, so the build had nothing to run on. Link one with: hw account:connect openai\n'
+      ? 'No ChatGPT account is linked, so the build had nothing to run on. Link one with: hwai account:connect openai\n'
       : linked === true
-        ? 'The ChatGPT link was refused, most likely expired. Reconnect it with: hw account:connect openai\n'
-        : 'The ChatGPT link was refused: it has expired, or none is linked. Check with: hw account:connections, then: hw account:connect openai\n'
+        ? 'The ChatGPT link was refused, most likely expired. Reconnect it with: hwai account:connect openai\n'
+        : 'The ChatGPT link was refused: it has expired, or none is linked. Check with: hwai account:connections, then: hwai account:connect openai\n'
     return (
       `${e}\n` +
       cause +
@@ -302,7 +302,7 @@ export function jobFailureMessage(error: unknown, linked?: boolean, errorCode?: 
     return (
       `${e}\n` +
       'A build on the ChatGPT route needs Connect or Pro with ChatGPT linked, and this account is not on ' +
-      'either. Re-run with --allow-paid to pay from credits, or subscribe: hw account:activate'
+      'either. Re-run with --allow-paid to pay from credits, or subscribe: hwai account:activate'
     )
   }
   // An automatic build that credit could not cover is not started, and is
@@ -311,8 +311,8 @@ export function jobFailureMessage(error: unknown, linked?: boolean, errorCode?: 
     return (
       `${e}\n` +
       'Not enough credit for this build, so it was not started and nothing was charged. Top up with: ' +
-      'hw account:topup --amount <usd>. An automatic build is tried again later. On Connect or Pro, a ' +
-      'linked ChatGPT account builds at no charge: hw account:connect openai'
+      'hwai account:topup --amount <usd>. An automatic build is tried again later. On Connect or Pro, a ' +
+      'linked ChatGPT account builds at no charge: hwai account:connect openai'
     )
   }
   if (code.startsWith('MODEL_NOT_FREE')) {
@@ -505,7 +505,7 @@ export function reportWarnings(job: Record<string, unknown>): string[] {
       `Left out ${skipped.length} third-person document(s): writing about this person does not go into a style.` +
         (ids.length > 0 ? ` ${ids.join(', ')}` : ''),
     )
-    lines.push('  If one is really their own writing, mark it: hw face:doc:edit <id> --perspective first-person')
+    lines.push('  If one is really their own writing, mark it: hwai face:doc:edit <id> --perspective first-person')
   }
 
   const thin = report.thin_corpus
@@ -536,8 +536,8 @@ export function styleCreditRefusal(details: Record<string, unknown> | undefined)
   const short = typeof est === 'number' && typeof bal === 'number' && est > bal ? Math.ceil(est - bal) : undefined
   return (
     `Not enough credit for this style build, which is charged to credits.${figures}\n` +
-    `Top up with: hw account:topup --amount ${short ?? '<usd>'}` +
-    ', or on Connect or Pro link ChatGPT to build there at no charge: hw account:connect openai\n' +
+    `Top up with: hwai account:topup --amount ${short ?? '<usd>'}` +
+    ', or on Connect or Pro link ChatGPT to build there at no charge: hwai account:connect openai\n' +
     'Nothing was started, and nothing was charged.'
   )
 }

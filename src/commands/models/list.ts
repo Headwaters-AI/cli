@@ -10,7 +10,7 @@ export default class ModelsList extends BaseCommand {
     'List the models you can name, once each, with their kind, endpoint and price (GET /v1/models). ' +
     'Upstream models are ours, the maestros, written after a face: @alice:maestro-1. Downstream models write ' +
     'the answer, after the /: @alice:maestro-1/gpt-5.4. Each is priced on its own. Without --kind the maestros ' +
-    'and the chat models are listed; --kind decision lists the models hw maestro:decide answers on. ' +
+    'and the chat models are listed; --kind decision lists the models hwai maestro:decide answers on. ' +
     'CHATGPT marks the Codex-eligible models, which can run on a linked ChatGPT plan (style builds, interviews). ' +
     'Prices are per million tokens. No login needed.'
 
