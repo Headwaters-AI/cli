@@ -268,7 +268,7 @@ variables:
 ```bash
 export HEADWATERS_API_KEY=sk-faces-...
 export HEADWATERS_TOKEN=your_jwt
-export HEADWATERS_BASE_URL=https://api.faces.sh   # optional override
+export HEADWATERS_BASE_URL=https://api.headwaters.ai   # optional override
 ```
 
 ## Plans

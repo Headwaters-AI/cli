@@ -4,8 +4,7 @@ import path from 'node:path'
 
 export const CONFIG_PATH = path.join(os.homedir(), '.headwaters', 'config.json')
 
-// TODO(#2080): switch the default to https://api.headwaters.ai once it serves (#2080 item 2.1).
-export const DEFAULT_BASE_URL = 'https://api.faces.sh'
+export const DEFAULT_BASE_URL = 'https://api.headwaters.ai'
 
 export interface HwConfig {
   base_url?: string

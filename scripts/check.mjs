@@ -622,7 +622,7 @@ eq('rate limit: waits the header', rateLimitWait(15, JSON.stringify({detail: RL}
 eq('rate limit: no header, no retry', rateLimitWait(undefined, JSON.stringify({detail: RL})), undefined)
 eq('rate limit: past a minute, no retry', rateLimitWait(3600, JSON.stringify({detail: RL})), undefined)
 eq('allowance 429 is not retried', rateLimitWait(10, JSON.stringify({detail: 'Your 5-hour allowance is used.'})), undefined)
-eq('rate limit guidance', /api\.faces\.sh\/v1\/rates/.test(refusalGuidance(429, undefined, RL) ?? ''), true)
+eq('rate limit guidance', /api\.headwaters\.ai\/v1\/rates/.test(refusalGuidance(429, undefined, RL) ?? ''), true)
 eq('allowance guidance unchanged', /api_fallback true/.test(refusalGuidance(429, undefined, 'allowance used') ?? ''), true)
 eq('free oauth-only guidance', /drop --oauth-only/.test(refusalGuidance(422, 'oauth_only_unavailable', 'm') ?? ''), true)
 
@@ -1009,10 +1009,10 @@ async function credentials() {
     return JSON.parse(out.stdout.trim().split('\n').at(-1))
   }
   try {
-    const saved = {token: 'jwt-saved', credentials_base_url: 'https://api.faces.sh'}
-    eq('creds: sent to their own API', probe(saved, 'https://api.faces.sh'), {token: 'jwt-saved', apiKey: null, withheld: false})
+    const saved = {token: 'jwt-saved', credentials_base_url: 'https://api.headwaters.ai'}
+    eq('creds: sent to their own API', probe(saved, 'https://api.headwaters.ai'), {token: 'jwt-saved', apiKey: null, withheld: false})
     eq('creds: withheld from another host', probe(saved, 'https://httpbin.org/anything'), {token: null, apiKey: null, withheld: true})
-    eq('creds: an older config belongs to its base_url', probe({api_key: 'sk-faces-x', base_url: 'https://staging.faces.sh'}, 'https://staging.faces.sh'), {token: null, apiKey: 'sk-faces-x', withheld: false})
+    eq('creds: an older config belongs to its base_url', probe({api_key: 'sk-faces-x', base_url: 'https://staging.headwaters.ai'}, 'https://staging.headwaters.ai'), {token: null, apiKey: 'sk-faces-x', withheld: false})
     eq('creds: an older config with no base_url belongs to the default', probe({token: 't'}, 'https://example.com').withheld, true)
     eq('creds: an explicit key is always used', probe(saved, 'https://example.com', {HEADWATERS_API_KEY: 'sk-faces-env'}).apiKey, 'sk-faces-env')
     eq('creds: never over plain http to another machine', /plain http/.test(probe(saved, 'http://example.com', {HEADWATERS_API_KEY: 'sk-faces-env'}).error ?? ''), true)

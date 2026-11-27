@@ -46,8 +46,7 @@ export function compareVersions(a: string, b: string): number {
   return 0
 }
 
-// TODO(#2080): follows DEFAULT_BASE_URL to https://api.headwaters.ai (#2080 item 2.1).
-const DEFAULT_API = 'https://api.faces.sh'
+const DEFAULT_API = 'https://api.headwaters.ai'
 
 const LATEST_CACHE = path.join(os.homedir(), '.headwaters', 'latest-version.json')
 const LATEST_TTL_MS = 6 * 3600_000
