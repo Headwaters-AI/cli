@@ -36,7 +36,7 @@ jobs:
         with:
           client-id: ${{ vars.GATE_TRIGGER_CLIENT_ID }}
           private-key: ${{ secrets.GATE_TRIGGER_KEY }}
-          owner: faces-sh
+          owner: Headwaters-AI
           repositories: release-gate
       - name: The pass came from the reviewed gate on main
         env:
@@ -44,7 +44,7 @@ jobs:
           RUN: ${{ steps.gate.outputs.run }}
         run: |
           [[ "$RUN" =~ ^[0-9]+$ ]] || { echo "no gate run behind the status"; exit 1; }
-          read -r branch path < <(gh api "repos/faces-sh/release-gate/actions/runs/$RUN" --jq '"\(.head_branch) \(.path)"')
+          read -r branch path < <(gh api "repos/Headwaters-AI/release-gate/actions/runs/$RUN" --jq '"\(.head_branch) \(.path)"')
           [ "$branch" = main ] && [ "$path" = .github/workflows/gate.yml ] \
             || { echo "the gate run $RUN came from '$branch' '$path', not gate.yml on main"; exit 1; }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
