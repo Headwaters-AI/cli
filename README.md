@@ -13,7 +13,7 @@ Commands are grouped by topic, as `hwai topic:command`: `face:*`, `maestro:*` an
 npm install -g @headwaters-ai/cli
 ```
 
-Requires Node.js >= 18.
+Requires Node.js >= 20.
 
 ## Quick start
 
